@@ -1,0 +1,32 @@
+[tool.black]
+line-length = 100
+target-version = ["py313"]
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | migrations
+  | staticfiles
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+skip = ["migrations", ".venv"]
+known_first_party = ["apps", "config", "core"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+exclude = ["migrations", ".venv", "staticfiles"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "C4", "DJ", "UP"]
+ignore = ["DJ001", "DJ012"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.local"
+python_files = ["test_*.py", "*_test.py"]
+testpaths = ["tests", "apps"]
+addopts = "-ra --cov=apps --cov=core --cov-report=term-missing"
