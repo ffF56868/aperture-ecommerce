@@ -16,6 +16,7 @@ api_v1_patterns = [
     path("profile/", include("apps.authentication.profile_urls")),
     path("", include("apps.cart_orders.urls")),
     path("contact/", include("apps.contact.urls")),
+    path("after-sales/", include("apps.after_sales.urls")),
 ]
 
 urlpatterns = [

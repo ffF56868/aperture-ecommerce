@@ -37,6 +37,15 @@ class OrderAdmin(admin.ModelAdmin):
         "created_at",
     )
     inlines = (OrderItemInline,)
+    actions = ("mark_as_shipped",)
+
+    @admin.action(description="将所选已支付订单标记为已发货")
+    def mark_as_shipped(self, request, queryset):
+        updated = queryset.filter(status=Order.Status.PAID).update(status=Order.Status.SHIPPED)
+        if updated:
+            self.message_user(request, f"已将 {updated} 笔订单标记为已发货。")
+        else:
+            self.message_user(request, "没有可发货的已支付订单。", level="warning")
 
 
 @admin.register(Payment)

@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { PackageOpen, LogOut } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { CreditCard, LogOut, PackageOpen, XCircle } from "lucide-react";
 import { authApi } from "@/api/auth";
-import { ordersApi } from "@/api/cartOrders";
+import { ordersApi, paymentsApi } from "@/api/cartOrders";
 import { getErrorMessage } from "@/api/client";
 import { Container } from "@/components/ui/Container";
 import { Button } from "@/components/ui/Button";
@@ -64,7 +64,30 @@ export function Profile() {
 }
 
 function OrderHistoryTab() {
+  const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["orders"], queryFn: ordersApi.listOrders });
+  const refreshOrders = () => queryClient.invalidateQueries({ queryKey: ["orders"] });
+
+  const cancelMutation = useMutation({
+    mutationFn: ordersApi.cancelOrder,
+    onSuccess: () => {
+      refreshOrders();
+      toast.success("订单已取消，商品库存已恢复。");
+    },
+    onError: (err) => toast.error(getErrorMessage(err, "订单取消失败。")),
+  });
+
+  const paymentMutation = useMutation({
+    mutationFn: async (orderId: string) => {
+      const payment = await paymentsApi.initiate(orderId);
+      return paymentsApi.verify(payment.transaction_id, true);
+    },
+    onSuccess: () => {
+      refreshOrders();
+      toast.success("模拟支付成功，订单等待商家发货。");
+    },
+    onError: (err) => toast.error(getErrorMessage(err, "支付处理失败。")),
+  });
 
   if (isLoading) {
     return (
@@ -112,6 +135,38 @@ function OrderHistoryTab() {
               </li>
             ))}
           </ul>
+          {order.status === "PENDING" && (
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                isLoading={paymentMutation.isPending && paymentMutation.variables === order.id}
+                onClick={() => paymentMutation.mutate(order.id)}
+              >
+                <CreditCard className="h-3.5 w-3.5" />
+                立即支付
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                isLoading={cancelMutation.isPending && cancelMutation.variables === order.id}
+                onClick={() => {
+                  if (window.confirm("确认取消这笔待支付订单吗？")) {
+                    cancelMutation.mutate(order.id);
+                  }
+                }}
+              >
+                <XCircle className="h-3.5 w-3.5" />
+                取消订单
+              </Button>
+            </div>
+          )}
+          {order.status === "PAID" && (
+            <p className="mt-4 text-xs text-ink-muted">订单已支付，商家发货后状态会更新为“已发货”。</p>
+          )}
+          {order.status === "SHIPPED" && (
+            <p className="mt-4 text-xs text-success">商家已发货，请留意物流信息。</p>
+          )}
         </li>
       ))}
     </ul>

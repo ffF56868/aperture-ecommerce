@@ -42,6 +42,11 @@ export const ordersApi = {
     const { data } = await apiClient.get<PaginatedResponse<Order>>("/orders/");
     return data;
   },
+
+  cancelOrder: async (orderId: string): Promise<Order> => {
+    const { data } = await apiClient.post<Order>("/orders/" + orderId + "/cancel/");
+    return data;
+  },
 };
 
 export const paymentsApi = {

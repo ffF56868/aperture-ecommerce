@@ -7,6 +7,7 @@ from rest_framework import serializers
 from apps.products.models import Product
 
 from .models import Cart, CartItem, Order, OrderItem, Payment
+from .services import OrderTransitionError, cancel_pending_order
 
 
 class CartItemSerializer(serializers.ModelSerializer):
@@ -188,13 +189,27 @@ class VerifyPaymentSerializer(serializers.Serializer):
 
     def save(self, **kwargs):
         payment: Payment = self.context["payment"]
-        payment.raw_callback_payload = self.validated_data
         if self.validated_data["success"]:
-            payment.status = Payment.Status.SUCCESS
-            payment.order.status = Order.Status.PAID
-        else:
-            payment.status = Payment.Status.FAILED
-            payment.order.status = Order.Status.CANCELLED
-        payment.save(update_fields=["status", "raw_callback_payload"])
-        payment.order.save(update_fields=["status"])
+            from django.db import transaction
+
+            with transaction.atomic():
+                payment = Payment.objects.select_for_update().select_related("order").get(id=payment.id)
+                if payment.order.status != Order.Status.PENDING:
+                    raise serializers.ValidationError("订单不处于待支付状态，无法完成支付。")
+                payment.raw_callback_payload = self.validated_data
+                payment.status = Payment.Status.SUCCESS
+                payment.order.status = Order.Status.PAID
+                payment.save(update_fields=["status", "raw_callback_payload"])
+                payment.order.save(update_fields=["status"])
+                return payment
+
+        try:
+            cancel_pending_order(
+                payment.order_id,
+                payment_callback_payload=self.validated_data,
+            )
+        except OrderTransitionError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
+
+        payment.refresh_from_db()
         return payment

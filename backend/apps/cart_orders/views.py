@@ -3,6 +3,7 @@
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
@@ -16,6 +17,7 @@ from .serializers import (
     UpdateCartItemSerializer,
     VerifyPaymentSerializer,
 )
+from .services import OrderTransitionError, cancel_pending_order
 
 
 class CartMixin:
@@ -115,6 +117,21 @@ class OrderListView(generics.ListAPIView):
         if getattr(self, "swagger_fake_view", False):
             return Order.objects.none()
         return Order.objects.filter(user=self.request.user).prefetch_related("items")
+
+
+@extend_schema(summary="取消当前用户的待支付订单", tags=["Orders"], responses=OrderSerializer)
+class OrderCancelView(generics.GenericAPIView):
+    permission_classes = (IsAuthenticated,)
+    serializer_class = OrderSerializer
+
+    def post(self, request, order_id, *args, **kwargs):
+        try:
+            order = cancel_pending_order(order_id, user=request.user)
+        except Order.DoesNotExist:
+            return Response({"detail": "未找到该订单。"}, status=status.HTTP_404_NOT_FOUND)
+        except OrderTransitionError as exc:
+            raise ValidationError(str(exc)) from exc
+        return Response(self.get_serializer(order).data)
 
 
 @extend_schema(summary="Initiate a payment for a pending order", tags=["Payments"])

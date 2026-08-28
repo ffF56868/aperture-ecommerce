@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, CreditCard, Loader2 } from "lucide-react";
-import { ordersApi, paymentsApi } from "@/api/cartOrders";
+import { ordersApi } from "@/api/cartOrders";
 import { getErrorMessage } from "@/api/client";
 import { Container } from "@/components/ui/Container";
 import { Button } from "@/components/ui/Button";
@@ -39,11 +39,9 @@ export function Checkout() {
 
     try {
       const order = await checkoutMutation.mutateAsync();
-      const { transaction_id } = await paymentsApi.initiate(order.id);
-      const { order_status } = await paymentsApi.verify(transaction_id, true);
-
-      setCompletedOrder({ ...order, status: order_status as Order["status"] });
+      setCompletedOrder(order);
       queryClient.invalidateQueries({ queryKey: ["cart"] });
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
       clear();
       setStep("success");
     } catch (err) {
@@ -61,7 +59,7 @@ export function Checkout() {
     return (
       <Container className="flex min-h-[60vh] flex-col items-center justify-center gap-4 text-center">
         <Loader2 className="h-8 w-8 animate-spin text-accent" />
-        <p className="font-display text-lg font-semibold text-ink">正在处理支付…</p>
+        <p className="font-display text-lg font-semibold text-ink">正在创建订单…</p>
         <p className="text-sm text-ink-muted">通常只需要几秒钟。</p>
       </Container>
     );
@@ -73,10 +71,11 @@ export function Checkout() {
         <div className="flex h-14 w-14 items-center justify-center rounded-full bg-success/10">
           <CheckCircle2 className="h-7 w-7 text-success" />
         </div>
-        <h1 className="font-display text-2xl font-semibold text-ink">订单已确认</h1>
+        <h1 className="font-display text-2xl font-semibold text-ink">订单已提交</h1>
         <p className="max-w-sm text-sm text-ink-muted">
           订单 <span className="font-mono text-ink">#{completedOrder.id.slice(0, 8)}</span> 当前状态为{" "}
-          <span className="text-success">{ORDER_STATUS_LABEL[completedOrder.status]}</span>，订单记录已保存至你的账户。
+          <span className="text-accent-soft">{ORDER_STATUS_LABEL[completedOrder.status]}</span>。请前往订单记录完成模拟支付，
+          待支付订单也可以取消。
         </p>
         <p className="font-mono text-2xl font-semibold text-ink">
           {formatPrice(completedOrder.total_amount)}
@@ -120,7 +119,7 @@ export function Checkout() {
               模拟支付
             </div>
             <p className="mt-1 text-xs text-ink-muted">
-              这是项目演示用的模拟支付流程，不会发生真实扣款。
+              提交订单后可在订单记录中完成模拟支付，不会发生真实扣款。
             </p>
           </div>
 

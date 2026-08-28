@@ -10,6 +10,7 @@ from .views import (
     CartItemUpdateView,
     CheckoutView,
     InitiatePaymentView,
+    OrderCancelView,
     OrderListView,
     VerifyPaymentView,
 )
@@ -26,6 +27,7 @@ urlpatterns = [
     # Orders
     path("orders/", OrderListView.as_view(), name="order-list"),
     path("orders/checkout/", CheckoutView.as_view(), name="order-checkout"),
+    path("orders/<uuid:order_id>/cancel/", OrderCancelView.as_view(), name="order-cancel"),
     # Payments
     path("payments/initiate/", InitiatePaymentView.as_view(), name="payment-initiate"),
     path("payments/verify/", VerifyPaymentView.as_view(), name="payment-verify"),
