@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .agent_service import AfterSalesAgentUnavailableError, run_agent_turn
+from .collaboration import get_stored_plan_payload
 from .models import AgentConversation, AgentMessage
 from .openai_client import OpenAIConfigurationError
 from .policies import AFTER_SALES_POLICIES, get_policy
@@ -35,6 +36,7 @@ from .workflow import (
 def _conversation_workflow_payload(conversation):
     pending_confirmation = get_pending_confirmation(conversation)
     return {
+        "collaboration_plan": get_stored_plan_payload(conversation.context),
         "pending_confirmation": (
             serialize_confirmation(pending_confirmation) if pending_confirmation else None
         ),

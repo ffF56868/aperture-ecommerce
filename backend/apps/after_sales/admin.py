@@ -23,7 +23,15 @@ class ToolExecutionInline(admin.TabularInline):
     model = ToolExecution
     extra = 0
     can_delete = False
-    fields = ("tool_name", "action_kind", "status", "error_code", "duration_ms", "created_at")
+    fields = (
+        "agent_role",
+        "tool_name",
+        "action_kind",
+        "status",
+        "error_code",
+        "duration_ms",
+        "created_at",
+    )
     readonly_fields = fields
     ordering = ("-created_at",)
 
@@ -93,6 +101,7 @@ class CustomerMemoryAdmin(admin.ModelAdmin):
 @admin.register(ToolExecution)
 class ToolExecutionAdmin(admin.ModelAdmin):
     list_display = (
+        "agent_role",
         "tool_name",
         "action_kind",
         "status",
@@ -110,6 +119,7 @@ class ToolExecutionAdmin(admin.ModelAdmin):
         "user",
         "after_sales_case",
         "confirmation_request",
+        "agent_role",
         "tool_name",
         "action_kind",
         "status",

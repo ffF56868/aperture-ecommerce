@@ -73,6 +73,11 @@ class ToolContext:
     allowed_action_kinds: frozenset[str] = field(
         default_factory=lambda: frozenset({ToolExecution.ActionKind.READ})
     )
+    allowed_agent_roles: frozenset[str] = field(
+        default_factory=lambda: frozenset(
+            {"order_analyst", "policy_advisor", "case_tracker", "workflow_specialist"}
+        )
+    )
 
 
 ToolHandler = Callable[[ToolContext, dict[str, Any]], dict[str, Any]]
@@ -85,6 +90,7 @@ class RegisteredTool:
     parameters: dict[str, Any]
     arguments_serializer: type[serializers.Serializer]
     action_kind: str
+    agent_role: str
     handler: ToolHandler
 
     def to_openai_definition(self) -> dict[str, Any]:
@@ -285,6 +291,7 @@ REGISTERED_TOOLS = (
         parameters=NO_ARGUMENTS_SCHEMA,
         arguments_serializer=EmptyArgumentsSerializer,
         action_kind=ToolExecution.ActionKind.READ,
+        agent_role="order_analyst",
         handler=_list_my_orders,
     ),
     RegisteredTool(
@@ -293,6 +300,7 @@ REGISTERED_TOOLS = (
         parameters=ORDER_DETAIL_SCHEMA,
         arguments_serializer=OrderDetailArgumentsSerializer,
         action_kind=ToolExecution.ActionKind.READ,
+        agent_role="order_analyst",
         handler=_get_my_order_detail,
     ),
     RegisteredTool(
@@ -301,6 +309,7 @@ REGISTERED_TOOLS = (
         parameters=NO_ARGUMENTS_SCHEMA,
         arguments_serializer=EmptyArgumentsSerializer,
         action_kind=ToolExecution.ActionKind.READ,
+        agent_role="policy_advisor",
         handler=_list_after_sales_policies,
     ),
     RegisteredTool(
@@ -309,6 +318,7 @@ REGISTERED_TOOLS = (
         parameters=NO_ARGUMENTS_SCHEMA,
         arguments_serializer=EmptyArgumentsSerializer,
         action_kind=ToolExecution.ActionKind.READ,
+        agent_role="case_tracker",
         handler=_list_my_after_sales_cases,
     ),
     RegisteredTool(
@@ -320,6 +330,7 @@ REGISTERED_TOOLS = (
         parameters=PREPARE_CONFIRMATION_SCHEMA,
         arguments_serializer=PrepareConfirmationArgumentsSerializer,
         action_kind=ToolExecution.ActionKind.WRITE,
+        agent_role="workflow_specialist",
         handler=_prepare_after_sales_confirmation,
     ),
     RegisteredTool(
@@ -332,6 +343,7 @@ REGISTERED_TOOLS = (
         parameters=CREATE_CASE_SCHEMA,
         arguments_serializer=CreateAfterSalesCaseArgumentsSerializer,
         action_kind=ToolExecution.ActionKind.WRITE,
+        agent_role="workflow_specialist",
         handler=_create_after_sales_case,
     ),
 )
@@ -339,10 +351,16 @@ REGISTERED_TOOLS = (
 TOOLS_BY_NAME = {tool.name: tool for tool in REGISTERED_TOOLS}
 
 
-def get_openai_tool_definitions() -> list[dict[str, Any]]:
-    """Expose only the allowlisted business tools to OpenAI."""
+def get_openai_tool_definitions(
+    *, allowed_tool_names: frozenset[str] | None = None
+) -> list[dict[str, Any]]:
+    """Expose only allowlisted tools assigned to the active specialist team."""
 
-    return [tool.to_openai_definition() for tool in REGISTERED_TOOLS]
+    return [
+        tool.to_openai_definition()
+        for tool in REGISTERED_TOOLS
+        if allowed_tool_names is None or tool.name in allowed_tool_names
+    ]
 
 
 def sanitize_tool_arguments(arguments: Any) -> dict[str, Any]:
@@ -397,6 +415,7 @@ def execute_tool(
         ToolExecution.objects.create(
             conversation=context.conversation,
             user=context.user,
+            agent_role="coordinator",
             tool_name=tool_name[:100] or "unknown",
             action_kind=ToolExecution.ActionKind.READ,
             status=ToolExecution.Status.DENIED,
@@ -411,12 +430,24 @@ def execute_tool(
     execution = ToolExecution.objects.create(
         conversation=context.conversation,
         user=context.user,
+        agent_role=tool.agent_role,
         tool_name=tool.name,
         action_kind=tool.action_kind,
         status=ToolExecution.Status.PENDING,
         initiated_by=ToolExecution.Initiator.AGENT,
         sanitized_arguments=sanitize_tool_arguments(arguments),
     )
+
+    if tool.agent_role not in context.allowed_agent_roles:
+        result = _error("AGENT_ROLE_DENIED", "当前协作计划没有为该专员分配此工具。")
+        _update_execution(
+            execution,
+            status=ToolExecution.Status.DENIED,
+            result=result,
+            error_code="AGENT_ROLE_DENIED",
+            started_at=started_at,
+        )
+        return result
 
     if tool.action_kind not in context.allowed_action_kinds:
         result = _error("TOOL_PERMISSION_DENIED", "当前会话没有执行该工具的权限。")

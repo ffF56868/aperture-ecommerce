@@ -128,6 +128,12 @@ export interface AgentToolCall {
   ok: boolean;
 }
 
+export interface AgentCollaborationRole {
+  key: string;
+  label: string;
+  responsibility: string;
+}
+
 export interface AfterSalesOrderSummary {
   id: string;
   status: OrderStatus;
@@ -165,6 +171,7 @@ export interface AgentConversationDetail {
   conversation_id: string;
   state: string;
   messages: AgentMessage[];
+  collaboration_plan: AgentCollaborationRole[];
   pending_confirmation: AfterSalesConfirmation | null;
   recent_cases: AfterSalesCase[];
 }
@@ -174,6 +181,7 @@ export interface SendAgentMessageResponse {
   state: string;
   assistant_message: string;
   tool_calls: AgentToolCall[];
+  collaboration_plan: AgentCollaborationRole[];
   pending_confirmation: AfterSalesConfirmation | null;
   recent_cases: AfterSalesCase[];
 }

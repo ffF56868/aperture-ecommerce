@@ -6,6 +6,7 @@ import {
   CircleCheck,
   ClipboardCheck,
   Clock3,
+  GitFork,
   MessageCircleMore,
   Plus,
   Send,
@@ -19,7 +20,12 @@ import { Button } from "@/components/ui/Button";
 import { Container } from "@/components/ui/Container";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/store/toastStore";
-import type { AfterSalesCase, AfterSalesConfirmation, AgentMessage } from "@/types";
+import type {
+  AfterSalesCase,
+  AfterSalesConfirmation,
+  AgentCollaborationRole,
+  AgentMessage,
+} from "@/types";
 import { cn } from "@/utils/cn";
 
 const STORAGE_KEY = "aperture-after-sales-conversation-id";
@@ -45,6 +51,7 @@ export function AfterSalesAgent() {
   const [draft, setDraft] = useState("");
   const [pendingConfirmation, setPendingConfirmation] = useState<AfterSalesConfirmation | null>(null);
   const [recentCases, setRecentCases] = useState<AfterSalesCase[]>([]);
+  const [collaborationPlan, setCollaborationPlan] = useState<AgentCollaborationRole[]>([]);
   const [workflowMessage, setWorkflowMessage] = useState("");
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -62,6 +69,7 @@ export function AfterSalesAgent() {
       setMessages(conversationQuery.data.messages);
       setPendingConfirmation(conversationQuery.data.pending_confirmation);
       setRecentCases(conversationQuery.data.recent_cases);
+      setCollaborationPlan(conversationQuery.data.collaboration_plan);
     }
   }, [conversationQuery.data]);
 
@@ -72,6 +80,7 @@ export function AfterSalesAgent() {
       setMessages([]);
       setPendingConfirmation(null);
       setRecentCases([]);
+      setCollaborationPlan([]);
     }
   }, [conversationQuery.isError]);
 
@@ -103,6 +112,7 @@ export function AfterSalesAgent() {
       setConversationId(response.conversation_id);
       setPendingConfirmation(response.pending_confirmation);
       setRecentCases(response.recent_cases);
+      setCollaborationPlan(response.collaboration_plan);
       setWorkflowMessage("");
       setMessages((current) => [
         ...current.map((item) =>
@@ -186,6 +196,7 @@ export function AfterSalesAgent() {
     setMessages([]);
     setDraft("");
     setPendingConfirmation(null);
+    setCollaborationPlan([]);
     setWorkflowMessage("");
   };
 
@@ -243,6 +254,7 @@ export function AfterSalesAgent() {
         <AfterSalesWorkflowPanel
           pendingConfirmation={pendingConfirmation}
           recentCases={recentCases}
+          collaborationPlan={collaborationPlan}
           workflowMessage={workflowMessage}
           isPending={confirmMutation.isPending || rejectMutation.isPending}
           onConfirm={(confirmationId) => confirmMutation.mutate(confirmationId)}
@@ -256,6 +268,7 @@ export function AfterSalesAgent() {
 interface AfterSalesWorkflowPanelProps {
   pendingConfirmation: AfterSalesConfirmation | null;
   recentCases: AfterSalesCase[];
+  collaborationPlan: AgentCollaborationRole[];
   workflowMessage: string;
   isPending: boolean;
   onConfirm: (confirmationId: string) => void;
@@ -265,6 +278,7 @@ interface AfterSalesWorkflowPanelProps {
 function AfterSalesWorkflowPanel({
   pendingConfirmation,
   recentCases,
+  collaborationPlan,
   workflowMessage,
   isPending,
   onConfirm,
@@ -344,6 +358,22 @@ function AfterSalesWorkflowPanel({
           </div>
         ) : (
           <p className="text-sm leading-6 text-ink-muted">当前没有待确认的售后申请。</p>
+        )}
+
+        {collaborationPlan.length > 0 && (
+          <section className="border-t border-border pt-4">
+            <div className="flex items-center gap-2">
+              <GitFork className="h-4 w-4 text-accent" />
+              <h3 className="text-sm font-semibold text-ink">本轮协作</h3>
+            </div>
+            <ul className="mt-3 space-y-2">
+              {collaborationPlan.map((role) => (
+                <li key={role.key} className="text-sm text-ink" title={role.responsibility}>
+                  {role.label}
+                </li>
+              ))}
+            </ul>
+          </section>
         )}
 
         <section className="border-t border-border pt-4">

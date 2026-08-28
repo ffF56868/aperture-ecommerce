@@ -90,6 +90,16 @@ class AfterSalesAgentAPITests(TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["assistant_message"], "我查到了你最近的订单，当前状态为待支付。")
         self.assertEqual(response.data["tool_calls"], [{"tool_name": "list_my_orders", "ok": True}])
+        self.assertEqual(
+            response.data["collaboration_plan"],
+            [
+                {
+                    "key": "order_analyst",
+                    "label": "订单核验专员",
+                    "responsibility": "只核验当前用户自己的订单、商品、支付和发货状态。",
+                }
+            ],
+        )
         self.assertEqual(len(fake_client.responses.calls), 2)
         self.assertEqual(fake_client.responses.calls[0]["tool_choice"], "auto")
         self.assertEqual(fake_client.responses.calls[1]["previous_response_id"], "resp_tool")
@@ -106,6 +116,13 @@ class AfterSalesAgentAPITests(TestCase):
             "list_my_orders",
         )
         self.assertEqual(ToolExecution.objects.get().status, ToolExecution.Status.SUCCEEDED)
+        self.assertEqual(ToolExecution.objects.get().agent_role, "order_analyst")
+
+        detail_response = self.client.get(
+            f"/api/v1/after-sales/conversations/{response.data['conversation_id']}/"
+        )
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(detail_response.data["collaboration_plan"][0]["key"], "order_analyst")
 
     @patch("apps.after_sales.agent_service.get_openai_client")
     def test_message_without_tool_returns_direct_reply(self, mock_get_client):
@@ -191,6 +208,10 @@ class AfterSalesAgentAPITests(TestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["state"], AgentConversation.State.AWAITING_CONFIRMATION)
+        self.assertEqual(
+            [item["key"] for item in response.data["collaboration_plan"]],
+            ["order_analyst", "policy_advisor", "workflow_specialist"],
+        )
         self.assertEqual(response.data["pending_confirmation"]["status"], ConfirmationRequest.Status.PENDING)
         self.assertEqual(ConfirmationRequest.objects.count(), 1)
         self.assertEqual(len(fake_client.responses.calls), 2)

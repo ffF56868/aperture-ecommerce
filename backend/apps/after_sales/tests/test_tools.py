@@ -135,6 +135,22 @@ class AfterSalesToolTests(TestCase):
         self.assertEqual(result["error"]["code"], "TOOL_PERMISSION_DENIED")
         self.assertEqual(ToolExecution.objects.get().status, ToolExecution.Status.DENIED)
 
+    def test_tool_is_denied_when_its_specialist_is_not_in_the_collaboration_plan(self):
+        result = execute_tool(
+            ToolContext(
+                user=self.user,
+                allowed_agent_roles=frozenset({"policy_advisor"}),
+            ),
+            "list_my_orders",
+            {},
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"]["code"], "AGENT_ROLE_DENIED")
+        execution = ToolExecution.objects.get()
+        self.assertEqual(execution.status, ToolExecution.Status.DENIED)
+        self.assertEqual(execution.agent_role, "order_analyst")
+
     def test_refund_tool_prepares_confirmation_without_creating_a_case_or_refund(self):
         result = execute_tool(
             self.write_context,

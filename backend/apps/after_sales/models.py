@@ -342,6 +342,7 @@ class ToolExecution(UUIDPrimaryKeyMixin, TimeStampedMixin):
         blank=True,
         related_name="tool_executions",
     )
+    agent_role = models.CharField("执行 Agent", max_length=32, default="coordinator")
     tool_name = models.CharField("工具名称", max_length=100)
     action_kind = models.CharField("操作类型", max_length=8, choices=ActionKind.choices)
     status = models.CharField("执行状态", max_length=16, choices=Status.choices, default=Status.PENDING)

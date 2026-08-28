@@ -8,6 +8,7 @@ from typing import Any, Mapping
 
 from django.utils import timezone
 
+from .collaboration import build_collaboration_plan
 from .models import AgentConversation, AgentMessage, CustomerMemory, ToolExecution
 from .openai_client import get_openai_client, get_openai_model
 from .tools import ToolContext, execute_tool, get_openai_tool_definitions, sanitize_tool_arguments
@@ -184,6 +185,11 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
     """Persist one user turn and complete up to three allowlisted tool rounds."""
 
     client = get_openai_client()
+    collaboration_plan = build_collaboration_plan(message)
+    agent_instructions = f"{AGENT_INSTRUCTIONS}{collaboration_plan.as_instruction()}"
+    tool_definitions = get_openai_tool_definitions(
+        allowed_tool_names=collaboration_plan.tool_names
+    )
     AgentMessage.objects.create(
         conversation=conversation,
         role=AgentMessage.Role.USER,
@@ -193,9 +199,9 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
     response = _call_model(
         client,
         model=get_openai_model(),
-        instructions=AGENT_INSTRUCTIONS,
+        instructions=agent_instructions,
         input=[{"role": "user", "content": _build_user_input(conversation)}],
-        tools=get_openai_tool_definitions(),
+        tools=tool_definitions,
         tool_choice="auto",
         parallel_tool_calls=False,
     )
@@ -222,6 +228,7 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
                     allowed_action_kinds=frozenset(
                         {ToolExecution.ActionKind.READ, ToolExecution.ActionKind.WRITE}
                     ),
+                    allowed_agent_roles=collaboration_plan.role_keys,
                 ),
                 tool_name,
                 arguments,
@@ -256,10 +263,10 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
         response = _call_model(
             client,
             model=get_openai_model(),
-            instructions=AGENT_INSTRUCTIONS,
+            instructions=agent_instructions,
             previous_response_id=_item_value(response, "id"),
             input=outputs,
-            tools=get_openai_tool_definitions(),
+            tools=tool_definitions,
             tool_choice="auto",
             parallel_tool_calls=False,
         )
@@ -282,6 +289,9 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
     conversation.summary = _refresh_conversation_summary(conversation)
     conversation.last_active_at = timezone.now()
     conversation.tool_failure_count = consecutive_tool_failures
+    context = dict(conversation.context or {})
+    context["collaboration_plan"] = collaboration_plan.as_payload()
+    conversation.context = context
     conversation.save(
         update_fields=[
             "state",
@@ -290,6 +300,7 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
             "last_active_at",
             "tool_failure_count",
             "selected_order",
+            "context",
             "updated_at",
         ]
     )

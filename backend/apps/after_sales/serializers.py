@@ -37,6 +37,12 @@ class AgentToolCallSerializer(serializers.Serializer):
     ok = serializers.BooleanField()
 
 
+class AgentCollaborationRoleSerializer(serializers.Serializer):
+    key = serializers.CharField()
+    label = serializers.CharField()
+    responsibility = serializers.CharField()
+
+
 class AfterSalesOrderSummarySerializer(serializers.Serializer):
     id = serializers.UUIDField()
     status = serializers.CharField()
@@ -75,6 +81,7 @@ class AgentConversationTurnSerializer(serializers.Serializer):
     state = serializers.CharField()
     assistant_message = serializers.CharField()
     tool_calls = AgentToolCallSerializer(many=True)
+    collaboration_plan = AgentCollaborationRoleSerializer(many=True)
     pending_confirmation = ConfirmationResponseSerializer(allow_null=True)
     recent_cases = AfterSalesCaseResponseSerializer(many=True)
 
@@ -83,6 +90,7 @@ class AgentConversationDetailSerializer(serializers.Serializer):
     conversation_id = serializers.UUIDField()
     state = serializers.CharField()
     messages = AgentMessageHistorySerializer(many=True)
+    collaboration_plan = AgentCollaborationRoleSerializer(many=True)
     pending_confirmation = ConfirmationResponseSerializer(allow_null=True)
     recent_cases = AfterSalesCaseResponseSerializer(many=True)
 
