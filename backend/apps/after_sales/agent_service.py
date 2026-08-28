@@ -11,6 +11,7 @@ from django.utils import timezone
 from .collaboration import build_collaboration_plan
 from .models import AgentConversation, AgentMessage, CustomerMemory, ToolExecution
 from .openai_client import get_openai_client, get_openai_model
+from .permissions import allowed_permission_levels_for_conversation
 from .tools import ToolContext, execute_tool, get_openai_tool_definitions, sanitize_tool_arguments
 
 logger = logging.getLogger(__name__)
@@ -187,8 +188,10 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
     client = get_openai_client()
     collaboration_plan = build_collaboration_plan(message)
     agent_instructions = f"{AGENT_INSTRUCTIONS}{collaboration_plan.as_instruction()}"
+    allowed_permission_levels = allowed_permission_levels_for_conversation(conversation)
     tool_definitions = get_openai_tool_definitions(
-        allowed_tool_names=collaboration_plan.tool_names
+        allowed_tool_names=collaboration_plan.tool_names,
+        allowed_permission_levels=allowed_permission_levels,
     )
     AgentMessage.objects.create(
         conversation=conversation,
@@ -229,6 +232,7 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
                         {ToolExecution.ActionKind.READ, ToolExecution.ActionKind.WRITE}
                     ),
                     allowed_agent_roles=collaboration_plan.role_keys,
+                    allowed_permission_levels=allowed_permission_levels,
                 ),
                 tool_name,
                 arguments,

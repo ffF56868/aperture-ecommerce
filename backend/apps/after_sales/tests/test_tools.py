@@ -4,7 +4,13 @@ from django.test import TestCase, override_settings
 
 from apps.after_sales.models import AfterSalesCase, AgentConversation, ConfirmationRequest, ToolExecution
 from apps.after_sales.openai_client import OpenAIConfigurationError, get_openai_client
-from apps.after_sales.tools import ToolContext, execute_tool, get_openai_tool_definitions
+from apps.after_sales.permissions import ToolPermissionLevel
+from apps.after_sales.tools import (
+    ToolContext,
+    execute_tool,
+    get_openai_tool_definitions,
+    get_tool_permission_matrix,
+)
 from apps.authentication.models import User
 from apps.cart_orders.models import Order, OrderItem, Payment
 
@@ -84,6 +90,21 @@ class AfterSalesToolTests(TestCase):
         self.assertEqual(
             set(create_case_definition["parameters"]["required"]),
             set(create_case_definition["parameters"]["properties"]),
+        )
+
+    def test_tool_permission_matrix_assigns_risk_levels_to_every_tool(self):
+        permissions = {item["tool_name"]: item for item in get_tool_permission_matrix()}
+
+        self.assertEqual(
+            permissions["list_my_orders"]["permission_level"], ToolPermissionLevel.READ_ONLY
+        )
+        self.assertEqual(
+            permissions["prepare_after_sales_confirmation"]["permission_level"],
+            ToolPermissionLevel.CONFIRMATION_REQUIRED,
+        )
+        self.assertEqual(
+            permissions["create_after_sales_case"]["permission_level"],
+            ToolPermissionLevel.GUARDED_CASE,
         )
 
     def test_list_orders_returns_only_the_current_users_orders(self):
@@ -186,6 +207,50 @@ class AfterSalesToolTests(TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual(result["error"]["code"], "TOOL_PERMISSION_DENIED")
         self.assertEqual(ConfirmationRequest.objects.count(), 0)
+
+    def test_write_tool_is_denied_when_the_permission_level_is_read_only(self):
+        result = execute_tool(
+            ToolContext(
+                user=self.user,
+                conversation=self.conversation,
+                allowed_action_kinds=frozenset(
+                    {ToolExecution.ActionKind.READ, ToolExecution.ActionKind.WRITE}
+                ),
+                allowed_permission_levels=frozenset({ToolPermissionLevel.READ_ONLY}),
+            ),
+            "prepare_after_sales_confirmation",
+            {
+                "order_id": str(self.order.id),
+                "policy_key": "refund",
+                "reason": "尺码不合适",
+            },
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"]["code"], "TOOL_PERMISSION_LEVEL_DENIED")
+        self.assertEqual(ConfirmationRequest.objects.count(), 0)
+
+    def test_pending_confirmation_blocks_any_new_agent_write_action(self):
+        confirmation_result = execute_tool(
+            self.write_context,
+            "prepare_after_sales_confirmation",
+            {
+                "order_id": str(self.order.id),
+                "policy_key": "refund",
+                "reason": "尺码不合适",
+            },
+        )
+        self.assertTrue(confirmation_result["ok"])
+
+        result = execute_tool(
+            self.write_context,
+            "create_after_sales_case",
+            {"policy_key": "human-service", "reason": "同时转人工客服", "order_id": None},
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"]["code"], "CONFIRMATION_PENDING")
+        self.assertEqual(AfterSalesCase.objects.count(), 0)
 
     def test_quality_issue_creates_one_high_priority_case(self):
         result = execute_tool(
