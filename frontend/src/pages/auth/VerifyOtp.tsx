@@ -22,10 +22,10 @@ export function VerifyOtp() {
   const mutation = useMutation({
     mutationFn: (code: string) => authApi.verifyOtp({ phone_number: phoneNumber!, code }),
     onSuccess: () => {
-      toast.success("Phone verified — you can now sign in.");
+      toast.success("手机号验证成功，现在可以登录了。 ");
       navigate("/login");
     },
-    onError: (err) => setError(getErrorMessage(err, "Invalid or expired code.")),
+    onError: (err) => setError(getErrorMessage(err, "验证码无效或已过期。")),
   });
 
   const handleChange = (index: number, value: string) => {
@@ -52,8 +52,8 @@ export function VerifyOtp() {
   if (!phoneNumber) {
     return (
       <div className="flex min-h-[calc(100vh-4rem)] flex-col items-center justify-center gap-3 px-6 text-center">
-        <p className="text-ink-muted">Start by creating an account to receive a verification code.</p>
-        <Button onClick={() => navigate("/register")}>Go to registration</Button>
+        <p className="text-ink-muted">请先注册账户以获取验证码。</p>
+        <Button onClick={() => navigate("/register")}>去注册</Button>
       </div>
     );
   }
@@ -69,9 +69,9 @@ export function VerifyOtp() {
         <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-accent/10">
           <ShieldCheck className="h-6 w-6 text-accent" />
         </div>
-        <h1 className="font-display text-2xl font-semibold text-ink">Enter verification code</h1>
+        <h1 className="font-display text-2xl font-semibold text-ink">输入验证码</h1>
         <p className="mt-1 text-sm text-ink-muted">
-          We sent a {CODE_LENGTH}-digit code to <span className="font-mono text-ink">{phoneNumber}</span>
+          我们已向 <span className="font-mono text-ink">{phoneNumber}</span> 发送 {CODE_LENGTH} 位验证码
         </p>
 
         <div className="mt-8 flex justify-center gap-2">
@@ -92,11 +92,11 @@ export function VerifyOtp() {
         </div>
 
         {error && <p className="mt-4 text-sm text-danger">{error}</p>}
-        {mutation.isPending && <p className="mt-4 text-sm text-ink-muted">Verifying…</p>}
+        {mutation.isPending && <p className="mt-4 text-sm text-ink-muted">正在验证…</p>}
 
         <div className="mt-8 flex items-center justify-center gap-1.5 font-mono text-xs text-ink-faint">
           <Aperture className="h-3.5 w-3.5" />
-          Codes expire after 2 minutes
+          验证码 2 分钟后失效
         </div>
       </motion.div>
     </div>

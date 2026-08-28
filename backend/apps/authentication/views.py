@@ -38,7 +38,7 @@ class RegisterView(generics.CreateAPIView):
         serializer.save()
         return Response(
             {
-                "detail": "OTP sent to your phone number.",
+                "detail": "验证码已发送至你的手机。",
                 "phone_number": serializer.validated_data["phone_number"],
             },
             status=status.HTTP_201_CREATED,
@@ -120,4 +120,4 @@ class ChangePasswordView(generics.GenericAPIView):
         serializer = ChangePasswordSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        return Response({"detail": "Password updated successfully."}, status=status.HTTP_200_OK)
+        return Response({"detail": "密码更新成功。"}, status=status.HTTP_200_OK)

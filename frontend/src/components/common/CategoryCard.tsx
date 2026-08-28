@@ -20,7 +20,7 @@ export function CategoryCard({ category }: { category: Category }) {
       <div className="absolute inset-0 bg-gradient-to-t from-bg via-bg/40 to-transparent" />
       <div className="relative">
         <h3 className="font-display text-lg font-semibold text-ink">{category.name}</h3>
-        <p className="font-mono text-xs text-ink-muted">{category.product_count} items</p>
+        <p className="font-mono text-xs text-ink-muted">{category.product_count} 件商品</p>
       </div>
     </Link>
   );

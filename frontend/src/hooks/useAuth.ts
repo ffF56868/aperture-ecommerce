@@ -15,10 +15,10 @@ export function useAuth() {
     onSuccess: async (data) => {
       loginSuccess(data.user, data.access, data.refresh);
       await mergeGuestCartIntoBackend();
-      toast.success(`Welcome back, ${data.user.username}.`);
+      toast.success(`欢迎回来，${data.user.username}。`);
       navigate("/");
     },
-    onError: (err) => toast.error(getErrorMessage(err, "Invalid username or password.")),
+    onError: (err) => toast.error(getErrorMessage(err, "用户名或密码不正确。")),
   });
 
   const logoutMutation = useMutation({
@@ -27,7 +27,7 @@ export function useAuth() {
     },
     onSettled: () => {
       clearAuth();
-      toast.info("You've been signed out.");
+      toast.info("你已退出登录。 ");
       navigate("/");
     },
   });

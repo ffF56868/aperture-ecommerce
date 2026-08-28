@@ -6,6 +6,10 @@ from django.contrib import admin
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 
+admin.site.site_header = "聚焦好物管理后台"
+admin.site.site_title = "聚焦好物后台"
+admin.site.index_title = "店铺管理"
+
 api_v1_patterns = [
     path("", include("apps.products.urls")),
     path("auth/", include("apps.authentication.urls")),
@@ -24,6 +28,8 @@ urlpatterns = [
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-    import debug_toolbar
 
-    urlpatterns += [path("__debug__/", include(debug_toolbar.urls))]
+    if "debug_toolbar" in settings.INSTALLED_APPS:
+        import debug_toolbar
+
+        urlpatterns += [path("__debug__/", include(debug_toolbar.urls))]

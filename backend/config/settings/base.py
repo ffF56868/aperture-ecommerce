@@ -125,7 +125,7 @@ AUTH_PASSWORD_VALIDATORS = [
 # ---------------------------------------------------------------------------
 # Internationalization
 # ---------------------------------------------------------------------------
-LANGUAGE_CODE = "en-us"
+LANGUAGE_CODE = "zh-hans"
 TIME_ZONE = config("DJANGO_TIME_ZONE", default="UTC")
 USE_I18N = True
 USE_TZ = True
@@ -183,8 +183,8 @@ REST_FRAMEWORK = {
 }
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "E-Commerce Store API",
-    "DESCRIPTION": "Production-grade REST API for the E-Commerce Store portfolio application.",
+    "TITLE": "聚焦好物 API",
+    "DESCRIPTION": "聚焦好物电商项目的 REST API 文档。",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
     "SCHEMA_PATH_PREFIX": "/api/v1/",

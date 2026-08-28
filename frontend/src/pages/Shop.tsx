@@ -11,10 +11,10 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { cn } from "@/utils/cn";
 
 const SORT_OPTIONS = [
-  { value: "", label: "Featured" },
-  { value: "price", label: "Price: low to high" },
-  { value: "-price", label: "Price: high to low" },
-  { value: "-created_at", label: "Newest" },
+  { value: "", label: "推荐排序" },
+  { value: "price", label: "价格从低到高" },
+  { value: "-price", label: "价格从高到低" },
+  { value: "-created_at", label: "最新上架" },
 ];
 
 export function Shop() {
@@ -53,10 +53,10 @@ export function Shop() {
     <Container className="py-10">
       <div className="mb-8 flex flex-col gap-2">
         <h1 className="font-display text-3xl font-semibold text-ink">
-          {search ? `Results for "${search}"` : "All products"}
+          {search ? `“${search}” 的搜索结果` : "全部商品"}
         </h1>
         <p className="text-sm text-ink-muted">
-          {productsQuery.data ? `${productsQuery.data.count} items` : "Loading catalog…"}
+          {productsQuery.data ? `共 ${productsQuery.data.count} 件商品` : "正在加载商品…"}
         </p>
       </div>
 
@@ -64,7 +64,7 @@ export function Shop() {
         {/* Filters sidebar */}
         <aside className={cn("space-y-6 lg:block", filtersOpen ? "block" : "hidden")}>
           <div>
-            <h3 className="mb-3 font-mono text-xs uppercase tracking-wider text-ink-faint">Category</h3>
+            <h3 className="mb-3 font-mono text-xs uppercase tracking-wider text-ink-faint">商品分类</h3>
             <div className="flex flex-col gap-1">
               <button
                 onClick={() => setParam("category", "")}
@@ -73,7 +73,7 @@ export function Shop() {
                   !category ? "bg-accent/10 text-accent-soft" : "text-ink-muted hover:bg-white/[0.04]",
                 )}
               >
-                All categories
+                全部分类
               </button>
               {categoriesQuery.data?.map((cat) => (
                 <button
@@ -93,7 +93,7 @@ export function Shop() {
           </div>
 
           <div>
-            <h3 className="mb-3 font-mono text-xs uppercase tracking-wider text-ink-faint">Max price</h3>
+            <h3 className="mb-3 font-mono text-xs uppercase tracking-wider text-ink-faint">最高价格</h3>
             <input
               type="range"
               min={0}
@@ -104,7 +104,7 @@ export function Shop() {
               className="w-full accent-accent"
             />
             <div className="mt-1 font-mono text-xs text-ink-muted">
-              {maxPrice ? `Up to $${maxPrice}` : "Any price"}
+              {maxPrice ? `不超过 ￥${maxPrice}` : "不限价格"}
             </div>
           </div>
 
@@ -115,12 +115,12 @@ export function Shop() {
               onChange={(e) => setParam("popular", e.target.checked ? "true" : "")}
               className="accent-accent"
             />
-            Popular only
+            仅看热门商品
           </label>
 
           {activeFilterCount > 0 && (
             <Button variant="ghost" size="sm" onClick={() => setSearchParams({})}>
-              Clear filters
+              清除筛选
             </Button>
           )}
         </aside>
@@ -135,7 +135,7 @@ export function Shop() {
               onClick={() => setFiltersOpen((v) => !v)}
             >
               <SlidersHorizontal className="h-3.5 w-3.5" />
-              Filters {activeFilterCount > 0 && `(${activeFilterCount})`}
+              筛选 {activeFilterCount > 0 && `(${activeFilterCount})`}
             </Button>
 
             <select
@@ -162,9 +162,9 @@ export function Shop() {
           {productsQuery.data?.results.length === 0 && (
             <EmptyState
               icon={PackageSearch}
-              title="No products match these filters"
-              description="Try widening your price range or clearing filters to see more."
-              actionLabel="Clear filters"
+              title="没有符合条件的商品"
+              description="请尝试放宽价格范围，或清除筛选条件后再试。"
+              actionLabel="清除筛选"
               onAction={() => setSearchParams({})}
             />
           )}

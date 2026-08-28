@@ -11,10 +11,10 @@ export function NotFound() {
       </div>
       <h1 className="font-mono text-6xl font-semibold text-ink">404</h1>
       <p className="max-w-sm text-sm text-ink-muted">
-        Out of frame — this page doesn't exist, or has moved somewhere we can't see.
+        页面不存在，或已经移动到了其他位置。
       </p>
       <Link to="/">
-        <Button>Back to home</Button>
+        <Button>返回首页</Button>
       </Link>
     </Container>
   );

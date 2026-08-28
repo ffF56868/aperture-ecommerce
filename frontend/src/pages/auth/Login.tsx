@@ -30,9 +30,9 @@ export function Login() {
         <Aperture className="relative h-8 w-8 text-accent" />
         <div className="relative">
           <p className="max-w-sm font-display text-2xl font-semibold leading-snug text-ink">
-            "Every order arrives exactly as specced. That's the whole promise."
+            “每一笔订单，都应与商品页面展示的一样清晰、可靠。”
           </p>
-          <p className="mt-3 font-mono text-xs text-ink-faint">— Aperture Quality Standard</p>
+          <p className="mt-3 font-mono text-xs text-ink-faint">- 聚焦好物品质标准</p>
         </div>
       </div>
 
@@ -45,12 +45,12 @@ export function Login() {
           className="w-full max-w-sm space-y-5"
         >
           <div>
-            <h1 className="font-display text-2xl font-semibold text-ink">Welcome back</h1>
-            <p className="mt-1 text-sm text-ink-muted">Sign in to continue to your account.</p>
+            <h1 className="font-display text-2xl font-semibold text-ink">欢迎回来</h1>
+            <p className="mt-1 text-sm text-ink-muted">登录后继续使用你的账户。</p>
           </div>
 
           <div>
-            <Label htmlFor="username">Username</Label>
+            <Label htmlFor="username">用户名</Label>
             <Input
               id="username"
               autoComplete="username"
@@ -61,7 +61,7 @@ export function Login() {
           </div>
 
           <div>
-            <Label htmlFor="password">Password</Label>
+            <Label htmlFor="password">密码</Label>
             <Input
               id="password"
               type="password"
@@ -73,14 +73,14 @@ export function Login() {
           </div>
 
           <Button type="submit" className="w-full" size="lg" isLoading={isLoggingIn}>
-            Sign in
+            登录
             <ArrowRight className="h-4 w-4" />
           </Button>
 
           <p className="text-center text-sm text-ink-muted">
-            New here?{" "}
+            第一次来？{" "}
             <Link to="/register" className="text-accent-soft hover:underline">
-              Create an account
+              注册账户
             </Link>
           </p>
         </motion.form>

@@ -30,12 +30,12 @@ export function ProductCard({ product }: { product: Product }) {
 
         {product.is_featured && (
           <Badge variant="coral" className="absolute left-3 top-3">
-            Featured
+            推荐
           </Badge>
         )}
         {!product.in_stock && (
           <Badge variant="danger" className="absolute right-3 top-3">
-            Out of stock
+            暂时缺货
           </Badge>
         )}
       </Link>
@@ -64,10 +64,10 @@ export function ProductCard({ product }: { product: Product }) {
               e.preventDefault();
               addItem(product, 1);
             }}
-            aria-label={`Add ${product.name} to cart`}
+            aria-label={`将 ${product.name} 加入购物车`}
           >
             <Plus className="h-3.5 w-3.5" />
-            Add
+            加入
           </Button>
         </div>
       </div>

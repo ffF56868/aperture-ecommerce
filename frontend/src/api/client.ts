@@ -64,7 +64,7 @@ apiClient.interceptors.response.use(
 
 export function getErrorMessage(
   error: unknown,
-  fallback = "Something went wrong. Please try again.",
+  fallback = "操作失败，请稍后重试。",
 ): string {
   if (axios.isAxiosError(error)) {
     const data = error.response?.data as Record<string, unknown> | undefined;

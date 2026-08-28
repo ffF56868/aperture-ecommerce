@@ -24,3 +24,4 @@ htmlcov/
 .vscode/
 .idea/
 *.log
+backend/celerybeat-schedule*

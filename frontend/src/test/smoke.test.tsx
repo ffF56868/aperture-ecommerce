@@ -6,12 +6,12 @@ import { formatPrice } from "@/utils/format";
 import { cn } from "@/utils/cn";
 
 describe("formatPrice", () => {
-  it("formats a string decimal as USD currency", () => {
-    expect(formatPrice("29.99")).toBe("$29.99");
+  it("formats a string decimal as CNY currency", () => {
+    expect(formatPrice("29.99")).toBe("¥29.99");
   });
 
-  it("formats a numeric value as USD currency", () => {
-    expect(formatPrice(1500)).toBe("$1,500.00");
+  it("formats a numeric value as CNY currency", () => {
+    expect(formatPrice(1500)).toBe("¥1,500.00");
   });
 });
 
@@ -24,8 +24,8 @@ describe("cn", () => {
 describe("Button", () => {
   it("renders children and responds to click", () => {
     const onClick = vi.fn();
-    render(<Button onClick={onClick}>Add to cart</Button>);
-    fireEvent.click(screen.getByText("Add to cart"));
+    render(<Button onClick={onClick}>加入购物车</Button>);
+    fireEvent.click(screen.getByText("加入购物车"));
     expect(onClick).toHaveBeenCalledOnce();
   });
 
@@ -37,7 +37,7 @@ describe("Button", () => {
 
 describe("Badge", () => {
   it("renders its label text", () => {
-    render(<Badge>In stock</Badge>);
-    expect(screen.getByText("In stock")).toBeInTheDocument();
+    render(<Badge>现货</Badge>);
+    expect(screen.getByText("现货")).toBeInTheDocument();
   });
 });

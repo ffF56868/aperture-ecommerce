@@ -9,15 +9,15 @@ import { Input, Label, Textarea } from "@/components/ui/Input";
 import { toast } from "@/store/toastStore";
 
 const CARDS = [
-  { icon: Mail, title: "Email", value: "hello@aperture.shop" },
-  { icon: Phone, title: "Phone", value: "+1 (415) 555-0134" },
-  { icon: MapPin, title: "Studio", value: "San Francisco, CA" },
+  { icon: Mail, title: "邮箱", value: "hello@aperture.shop" },
+  { icon: Phone, title: "电话", value: "+86 400-555-0134" },
+  { icon: MapPin, title: "工作室", value: "上海市" },
 ];
 
 const HOURS = [
-  ["Mon – Fri", "9:00am – 6:00pm PT"],
-  ["Saturday", "10:00am – 4:00pm PT"],
-  ["Sunday", "Closed"],
+  ["周一至周五", "09:00 - 18:00"],
+  ["周六", "10:00 - 16:00"],
+  ["周日", "休息"],
 ];
 
 const initialForm = { full_name: "", email: "", phone_number: "", subject: "", message: "" };
@@ -29,18 +29,18 @@ export function Contact() {
   const mutation = useMutation({
     mutationFn: contactApi.submit,
     onSuccess: () => {
-      toast.success("Message sent — we'll reply within one business day.");
+      toast.success("消息已发送，我们会在一个工作日内回复。 ");
       setForm(initialForm);
     },
-    onError: (err) => setError(getErrorMessage(err, "Could not send your message.")),
+    onError: (err) => setError(getErrorMessage(err, "消息发送失败，请稍后重试。")),
   });
 
   return (
     <Container className="py-16">
       <div className="mb-12 max-w-xl">
-        <h1 className="font-display text-3xl font-semibold text-ink">Get in touch</h1>
+        <h1 className="font-display text-3xl font-semibold text-ink">联系我们</h1>
         <p className="mt-2 text-sm text-ink-muted">
-          Questions about an order, a product, or a partnership — we read everything.
+          关于订单、商品或合作的任何问题，都欢迎告诉我们。
         </p>
       </div>
 
@@ -61,7 +61,7 @@ export function Contact() {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <Label htmlFor="full_name">Full name</Label>
+              <Label htmlFor="full_name">姓名</Label>
               <Input
                 id="full_name"
                 value={form.full_name}
@@ -70,7 +70,7 @@ export function Contact() {
               />
             </div>
             <div>
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">邮箱</Label>
               <Input
                 id="email"
                 type="email"
@@ -82,7 +82,7 @@ export function Contact() {
           </div>
 
           <div>
-            <Label htmlFor="subject">Subject</Label>
+            <Label htmlFor="subject">主题</Label>
             <Input
               id="subject"
               value={form.subject}
@@ -92,7 +92,7 @@ export function Contact() {
           </div>
 
           <div>
-            <Label htmlFor="message">Message</Label>
+            <Label htmlFor="message">留言内容</Label>
             <Textarea
               id="message"
               value={form.message}
@@ -102,7 +102,7 @@ export function Contact() {
           </div>
 
           <Button type="submit" size="lg" isLoading={mutation.isPending}>
-            Send message
+            发送留言
             <Send className="h-4 w-4" />
           </Button>
         </form>
@@ -126,7 +126,7 @@ export function Contact() {
           <div className="rounded-lg border border-border bg-bg-surface p-4">
             <div className="mb-2 flex items-center gap-2 text-sm text-ink">
               <Clock className="h-4 w-4 text-accent-soft" />
-              Hours
+              服务时间
             </div>
             <ul className="space-y-1">
               {HOURS.map(([day, time]) => (
@@ -141,7 +141,7 @@ export function Contact() {
           <div className="flex aspect-video items-center justify-center rounded-lg border border-dashed border-border-strong bg-bg-elevated">
             <div className="text-center text-ink-faint">
               <MapPin className="mx-auto h-6 w-6" strokeWidth={1.25} />
-              <p className="mt-1 text-xs">Map view placeholder</p>
+              <p className="mt-1 text-xs">地图位置</p>
             </div>
           </div>
         </div>

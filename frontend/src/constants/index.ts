@@ -1,21 +1,21 @@
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 
 export const BRAND = {
-  name: "Aperture",
-  tagline: "Precision, made to order.",
+  name: "聚焦好物",
+  tagline: "精挑细选，专注每一件好物。",
 } as const;
 
 export const NAV_LINKS = [
-  { label: "Shop", to: "/products" },
-  { label: "About", to: "/about" },
-  { label: "Contact", to: "/contact" },
+  { label: "商品", to: "/products" },
+  { label: "关于我们", to: "/about" },
+  { label: "联系我们", to: "/contact" },
 ] as const;
 
 export const ORDER_STATUS_LABEL: Record<string, string> = {
-  PENDING: "Pending",
-  PAID: "Paid",
-  CANCELLED: "Cancelled",
-  SHIPPED: "Shipped",
+  PENDING: "待支付",
+  PAID: "已支付",
+  CANCELLED: "已取消",
+  SHIPPED: "已发货",
 };
 
 export const ORDER_STATUS_COLOR: Record<string, string> = {

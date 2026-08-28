@@ -4,24 +4,24 @@ import { BRAND } from "@/constants";
 
 const columns = [
   {
-    title: "Shop",
+    title: "选购",
     links: [
-      { label: "All products", to: "/products" },
-      { label: "Featured", to: "/products?popular=true" },
+      { label: "全部商品", to: "/products" },
+      { label: "热门推荐", to: "/products?popular=true" },
     ],
   },
   {
-    title: "Company",
+    title: "品牌",
     links: [
-      { label: "About", to: "/about" },
-      { label: "Contact", to: "/contact" },
+      { label: "关于我们", to: "/about" },
+      { label: "联系我们", to: "/contact" },
     ],
   },
   {
-    title: "Account",
+    title: "账户",
     links: [
-      { label: "Sign in", to: "/login" },
-      { label: "Order history", to: "/profile" },
+      { label: "登录", to: "/login" },
+      { label: "订单记录", to: "/profile" },
     ],
   },
 ];
@@ -52,9 +52,9 @@ export function Footer() {
       <div className="border-t border-border py-6">
         <Container className="flex flex-col items-center justify-between gap-2 text-xs text-ink-faint sm:flex-row">
           <span>
-            &copy; {new Date().getFullYear()} {BRAND.name}. All rights reserved.
+            &copy; {new Date().getFullYear()} {BRAND.name}。保留所有权利。
           </span>
-          <span className="font-mono">Built with precision.</span>
+          <span className="font-mono">为细节而生。</span>
         </Container>
       </div>
     </footer>

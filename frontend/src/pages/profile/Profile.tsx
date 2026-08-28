@@ -34,12 +34,12 @@ export function Profile() {
     <Container className="py-10">
       <div className="mb-8 flex items-center justify-between">
         <div>
-          <h1 className="font-display text-3xl font-semibold text-ink">Account</h1>
-          <p className="mt-1 text-sm text-ink-muted">Signed in as {user.username}</p>
+          <h1 className="font-display text-3xl font-semibold text-ink">我的账户</h1>
+          <p className="mt-1 text-sm text-ink-muted">当前登录：{user.username}</p>
         </div>
         <Button variant="outline" size="sm" onClick={() => logout()}>
           <LogOut className="h-3.5 w-3.5" />
-          Sign out
+          退出登录
         </Button>
       </div>
 
@@ -53,7 +53,7 @@ export function Profile() {
               tab === t ? "border-accent text-ink" : "border-transparent text-ink-muted hover:text-ink",
             )}
           >
-            {t === "orders" ? "Order history" : "Account details"}
+            {t === "orders" ? "订单记录" : "账户资料"}
           </button>
         ))}
       </div>
@@ -80,8 +80,8 @@ function OrderHistoryTab() {
     return (
       <EmptyState
         icon={PackageOpen}
-        title="No orders yet"
-        description="Once you place an order, it'll show up here with its status."
+        title="还没有订单"
+        description="下单后，订单和状态会显示在这里。"
       />
     );
   }
@@ -127,18 +127,18 @@ function AccountDetailsTab() {
     mutationFn: authApi.changeUsername,
     onSuccess: (updated) => {
       setUser(updated);
-      toast.success("Username updated.");
+      toast.success("用户名已更新。 ");
     },
-    onError: (err) => toast.error(getErrorMessage(err, "Could not update username.")),
+    onError: (err) => toast.error(getErrorMessage(err, "用户名更新失败。")),
   });
 
   const passwordMutation = useMutation({
     mutationFn: authApi.changePassword,
     onSuccess: () => {
-      toast.success("Password updated.");
+      toast.success("密码已更新。 ");
       setPasswords({ current_password: "", new_password: "" });
     },
-    onError: (err) => toast.error(getErrorMessage(err, "Could not update password.")),
+    onError: (err) => toast.error(getErrorMessage(err, "密码更新失败。")),
   });
 
   return (
@@ -150,17 +150,17 @@ function AccountDetailsTab() {
         }}
         className="space-y-4 rounded-lg border border-border bg-bg-surface p-5"
       >
-        <h2 className="font-display text-sm font-semibold text-ink">Username</h2>
+        <h2 className="font-display text-sm font-semibold text-ink">用户名</h2>
         <div>
-          <Label htmlFor="username">Username</Label>
+          <Label htmlFor="username">用户名</Label>
           <Input id="username" value={username} onChange={(e) => setUsername(e.target.value)} />
         </div>
         <div>
-          <Label>Phone number</Label>
+          <Label>手机号码</Label>
           <Input value={user?.phone_number ?? ""} disabled />
         </div>
         <Button type="submit" size="sm" isLoading={usernameMutation.isPending}>
-          Save changes
+          保存修改
         </Button>
       </form>
 
@@ -171,9 +171,9 @@ function AccountDetailsTab() {
         }}
         className="space-y-4 rounded-lg border border-border bg-bg-surface p-5"
       >
-        <h2 className="font-display text-sm font-semibold text-ink">Password</h2>
+        <h2 className="font-display text-sm font-semibold text-ink">修改密码</h2>
         <div>
-          <Label htmlFor="current_password">Current password</Label>
+          <Label htmlFor="current_password">当前密码</Label>
           <Input
             id="current_password"
             type="password"
@@ -183,7 +183,7 @@ function AccountDetailsTab() {
           />
         </div>
         <div>
-          <Label htmlFor="new_password">New password</Label>
+          <Label htmlFor="new_password">新密码</Label>
           <Input
             id="new_password"
             type="password"
@@ -194,7 +194,7 @@ function AccountDetailsTab() {
           />
         </div>
         <Button type="submit" size="sm" isLoading={passwordMutation.isPending}>
-          Update password
+          更新密码
         </Button>
       </form>
     </div>

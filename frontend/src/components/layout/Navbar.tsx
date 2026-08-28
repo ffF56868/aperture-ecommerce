@@ -28,7 +28,7 @@ export function Navbar() {
   return (
     <header className="sticky top-0 z-50 glass">
       <Container className="flex h-16 items-center justify-between gap-4">
-        <Link to="/" className="flex items-center gap-2 shrink-0" aria-label={`${BRAND.name} home`}>
+        <Link to="/" className="flex items-center gap-2 shrink-0" aria-label={`${BRAND.name} 首页`}>
           <svg viewBox="0 0 32 32" className="h-7 w-7" fill="none">
             <path d="M6 11V6H11" stroke="#7B61FF" strokeWidth="2.4" strokeLinecap="round" />
             <path d="M21 6H26V11" stroke="#7B61FF" strokeWidth="2.4" strokeLinecap="round" />
@@ -65,25 +65,25 @@ export function Navbar() {
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   onBlur={() => !query && setSearchOpen(false)}
-                  placeholder="Search products…"
+                  placeholder="搜索商品…"
                   className="h-9 w-56 rounded-md border border-border-strong bg-bg-surface px-3 text-sm outline-none focus:border-accent"
                 />
               </form>
             ) : (
-              <Button variant="ghost" size="icon" onClick={() => setSearchOpen(true)} aria-label="Search">
+              <Button variant="ghost" size="icon" onClick={() => setSearchOpen(true)} aria-label="搜索">
                 <Search className="h-4.5 w-4.5" />
               </Button>
             )}
           </div>
 
           <Link to={isAuthenticated ? "/profile" : "/login"}>
-            <Button variant="ghost" size="icon" aria-label="Account">
+            <Button variant="ghost" size="icon" aria-label="我的账户">
               <User className="h-4.5 w-4.5" />
             </Button>
           </Link>
 
           <Link to="/cart" className="relative">
-            <Button variant="ghost" size="icon" aria-label="Cart">
+            <Button variant="ghost" size="icon" aria-label="购物车">
               <ShoppingBag className="h-4.5 w-4.5" />
             </Button>
             {totalItems > 0 && (
@@ -98,7 +98,7 @@ export function Navbar() {
             size="icon"
             className="md:hidden"
             onClick={() => setMobileOpen((v) => !v)}
-            aria-label="Menu"
+            aria-label="菜单"
           >
             {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </Button>

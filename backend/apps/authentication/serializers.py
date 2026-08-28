@@ -27,13 +27,13 @@ class RegisterSerializer(serializers.Serializer):
     def validate_username(self, value):
         existing = User.objects.filter(username=value).first()
         if existing and existing.is_phone_verified:
-            raise serializers.ValidationError("This username is already taken.")
+            raise serializers.ValidationError("该用户名已被使用。")
         return value
 
     def validate_phone_number(self, value):
         existing = User.objects.filter(phone_number=value).first()
         if existing and existing.is_phone_verified:
-            raise serializers.ValidationError("This phone number is already registered.")
+            raise serializers.ValidationError("该手机号已注册。")
         return value
 
     def create(self, validated_data):
@@ -79,18 +79,18 @@ class VerifyOTPSerializer(serializers.Serializer):
         )
 
         if cached_code is None:
-            raise serializers.ValidationError("The OTP code has expired. Please request a new one.")
+            raise serializers.ValidationError("验证码已过期，请重新获取。")
 
         if record and record.attempt_count >= 5:
             raise serializers.ValidationError(
-                "Too many incorrect attempts. Please request a new code."
+                "错误次数过多，请重新获取验证码。"
             )
 
         if cached_code != attrs["code"]:
             if record:
                 record.attempt_count += 1
                 record.save(update_fields=["attempt_count"])
-            raise serializers.ValidationError("Invalid OTP code.")
+            raise serializers.ValidationError("验证码不正确。")
 
         attrs["_record"] = record
         return attrs
@@ -124,11 +124,11 @@ class LoginSerializer(serializers.Serializer):
     def validate(self, attrs):
         user = User.objects.filter(username=attrs["username"]).first()
         if user is None or not user.check_password(attrs["password"]):
-            raise serializers.ValidationError("Invalid username or password.")
+            raise serializers.ValidationError("用户名或密码不正确。")
         if not user.is_phone_verified:
-            raise serializers.ValidationError("Please verify your phone number before logging in.")
+            raise serializers.ValidationError("请先完成手机号验证后再登录。")
         if not user.is_active:
-            raise serializers.ValidationError("This account has been deactivated.")
+            raise serializers.ValidationError("该账户已被停用。")
 
         attrs["user"] = user
         return attrs
@@ -152,7 +152,7 @@ class LogoutSerializer(serializers.Serializer):
             token.blacklist()
         except Exception as exc:  # noqa: BLE001
             raise serializers.ValidationError(
-                "Invalid or already-blacklisted refresh token."
+                "刷新令牌无效或已失效。"
             ) from exc
 
 
@@ -171,7 +171,7 @@ class ChangeUsernameSerializer(serializers.ModelSerializer):
     def validate_username(self, value):
         qs = User.objects.filter(username=value).exclude(pk=self.instance.pk)
         if qs.exists():
-            raise serializers.ValidationError("This username is already taken.")
+            raise serializers.ValidationError("该用户名已被使用。")
         return value
 
 
@@ -182,7 +182,7 @@ class ChangePasswordSerializer(serializers.Serializer):
     def validate_current_password(self, value):
         user = self.context["request"].user
         if not user.check_password(value):
-            raise serializers.ValidationError("Current password is incorrect.")
+            raise serializers.ValidationError("当前密码不正确。")
         return value
 
     def save(self, **kwargs):

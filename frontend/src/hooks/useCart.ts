@@ -25,20 +25,20 @@ export function useCart() {
     mutationFn: ({ productId, quantity }: { productId: string; quantity: number }) =>
       cartApi.addItem(productId, quantity),
     onSuccess: invalidate,
-    onError: (err) => toast.error(getErrorMessage(err, "Could not add item to cart.")),
+    onError: (err) => toast.error(getErrorMessage(err, "商品加入购物车失败。")),
   });
 
   const updateMutation = useMutation({
     mutationFn: ({ itemId, quantity }: { itemId: number; quantity: number }) =>
       cartApi.updateItem(itemId, quantity),
     onSuccess: invalidate,
-    onError: (err) => toast.error(getErrorMessage(err, "Could not update quantity.")),
+    onError: (err) => toast.error(getErrorMessage(err, "商品数量更新失败。")),
   });
 
   const removeMutation = useMutation({
     mutationFn: (itemId: number) => cartApi.removeItem(itemId),
     onSuccess: invalidate,
-    onError: (err) => toast.error(getErrorMessage(err, "Could not remove item.")),
+    onError: (err) => toast.error(getErrorMessage(err, "商品删除失败。")),
   });
 
   const clearMutation = useMutation({
@@ -52,7 +52,7 @@ export function useCart() {
     } else {
       guest.addItem(product, quantity);
     }
-    toast.success(`Added "${product.name}" to cart.`);
+    toast.success(`已将“${product.name}”加入购物车。`);
   };
 
   if (isAuthenticated) {

@@ -17,10 +17,10 @@ export function Register() {
   const mutation = useMutation({
     mutationFn: authApi.register,
     onSuccess: () => {
-      toast.success("Code sent — check your phone.");
+      toast.success("验证码已发送，请查看手机。 ");
       navigate("/verify-otp", { state: { phoneNumber: form.phone_number } });
     },
-    onError: (err) => setError(getErrorMessage(err, "Could not create your account.")),
+    onError: (err) => setError(getErrorMessage(err, "账户创建失败，请稍后重试。")),
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -43,7 +43,7 @@ export function Register() {
         <Aperture className="relative h-8 w-8 text-accent" />
         <div className="relative">
           <p className="max-w-sm font-display text-2xl font-semibold leading-snug text-ink">
-            Join a catalog built for people who read the spec sheet first.
+            加入一个为重视商品细节的人准备的好物目录。
           </p>
         </div>
       </div>
@@ -57,8 +57,8 @@ export function Register() {
           className="w-full max-w-sm space-y-5"
         >
           <div>
-            <h1 className="font-display text-2xl font-semibold text-ink">Create your account</h1>
-            <p className="mt-1 text-sm text-ink-muted">Step 1 of 2 — we'll text you a verification code.</p>
+            <h1 className="font-display text-2xl font-semibold text-ink">创建账户</h1>
+            <p className="mt-1 text-sm text-ink-muted">第 1 步，共 2 步：我们会向你的手机发送验证码。</p>
           </div>
 
           {error && (
@@ -68,7 +68,7 @@ export function Register() {
           )}
 
           <div>
-            <Label htmlFor="username">Username</Label>
+            <Label htmlFor="username">用户名</Label>
             <Input
               id="username"
               value={form.username}
@@ -78,7 +78,7 @@ export function Register() {
           </div>
 
           <div>
-            <Label htmlFor="phone">Phone number</Label>
+            <Label htmlFor="phone">手机号码</Label>
             <Input
               id="phone"
               type="tel"
@@ -87,11 +87,11 @@ export function Register() {
               onChange={(e) => setForm({ ...form, phone_number: e.target.value })}
               required
             />
-            <p className="mt-1 text-xs text-ink-faint">E.164 format, e.g. +14155552671</p>
+            <p className="mt-1 text-xs text-ink-faint">使用国际号码格式，例如 +8613812345678</p>
           </div>
 
           <div>
-            <Label htmlFor="password">Password</Label>
+            <Label htmlFor="password">密码</Label>
             <Input
               id="password"
               type="password"
@@ -103,14 +103,14 @@ export function Register() {
           </div>
 
           <Button type="submit" className="w-full" size="lg" isLoading={mutation.isPending}>
-            Send verification code
+            发送验证码
             <ArrowRight className="h-4 w-4" />
           </Button>
 
           <p className="text-center text-sm text-ink-muted">
-            Already have an account?{" "}
+            已有账户？{" "}
             <Link to="/login" className="text-accent-soft hover:underline">
-              Sign in
+              去登录
             </Link>
           </p>
         </motion.form>

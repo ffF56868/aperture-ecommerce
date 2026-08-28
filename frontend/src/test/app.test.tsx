@@ -52,7 +52,7 @@ function renderAtRoute(route: string) {
 describe("App", () => {
   it("renders the home page without crashing", async () => {
     renderAtRoute("/");
-    expect(await screen.findAllByText(/Aperture/i)).not.toHaveLength(0);
+    expect(await screen.findAllByText(/聚焦好物/i)).not.toHaveLength(0);
   });
 
   it("renders the 404 page for an unknown route", () => {
@@ -62,11 +62,11 @@ describe("App", () => {
 
   it("renders the login page", () => {
     renderAtRoute("/login");
-    expect(screen.getByText("Welcome back")).toBeInTheDocument();
+    expect(screen.getByText("欢迎回来")).toBeInTheDocument();
   });
 
   it("renders the register page", () => {
     renderAtRoute("/register");
-    expect(screen.getByText("Create your account")).toBeInTheDocument();
+    expect(screen.getByText("创建账户")).toBeInTheDocument();
   });
 });

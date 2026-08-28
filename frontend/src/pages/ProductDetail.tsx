@@ -40,9 +40,9 @@ export function ProductDetail() {
   if (!product) {
     return (
       <Container className="py-24 text-center">
-        <p className="text-ink-muted">Product not found.</p>
+        <p className="text-ink-muted">没有找到该商品。</p>
         <Link to="/products" className="mt-4 inline-block text-sm text-accent-soft hover:underline">
-          Back to shop
+          返回商品列表
         </Link>
       </Container>
     );
@@ -55,7 +55,7 @@ export function ProductDetail() {
         className="mb-6 inline-flex items-center gap-1 text-sm text-ink-muted hover:text-ink"
       >
         <ChevronLeft className="h-4 w-4" />
-        Back to shop
+        返回商品列表
       </Link>
 
       <div className="grid gap-10 md:grid-cols-2">
@@ -84,9 +84,9 @@ export function ProductDetail() {
 
           <div className="mt-3 flex items-center gap-2">
             <Badge variant={product.in_stock ? "success" : "danger"}>
-              {product.in_stock ? "In stock" : "Out of stock"}
+              {product.in_stock ? "现货" : "暂时缺货"}
             </Badge>
-            {product.is_featured && <Badge variant="coral">Featured</Badge>}
+            {product.is_featured && <Badge variant="coral">推荐</Badge>}
           </div>
 
           <p className="mt-5 font-mono text-3xl font-semibold text-ink">{formatPrice(product.price)}</p>
@@ -100,7 +100,7 @@ export function ProductDetail() {
               <button
                 onClick={() => setQuantity((q) => Math.max(1, q - 1))}
                 className="flex h-11 w-11 items-center justify-center text-ink-muted hover:text-ink"
-                aria-label="Decrease quantity"
+                aria-label="减少数量"
               >
                 <Minus className="h-4 w-4" />
               </button>
@@ -108,7 +108,7 @@ export function ProductDetail() {
               <button
                 onClick={() => setQuantity((q) => q + 1)}
                 className="flex h-11 w-11 items-center justify-center text-ink-muted hover:text-ink"
-                aria-label="Increase quantity"
+                aria-label="增加数量"
               >
                 <Plus className="h-4 w-4" />
               </button>
@@ -120,24 +120,24 @@ export function ProductDetail() {
               disabled={!product.in_stock}
               onClick={() => addItem(product, quantity)}
             >
-              {product.in_stock ? "Add to cart" : "Out of stock"}
+              {product.in_stock ? "加入购物车" : "暂时缺货"}
             </Button>
           </div>
 
           <div className="mt-8 flex flex-col gap-3 border-t border-border pt-6">
             <div className="flex items-center gap-2.5 text-sm text-ink-muted">
               <Truck className="h-4 w-4 text-accent-soft" />
-              Estimated delivery: {product.delivery_estimate_days ?? 3} days
+              预计 {product.delivery_estimate_days ?? 3} 天内送达
             </div>
             <div className="flex items-center gap-2.5 text-sm text-ink-muted">
               <ShieldCheck className="h-4 w-4 text-accent-soft" />
-              Inspected and verified before dispatch
+              发货前已完成检查与核验
             </div>
           </div>
 
           {product.full_description && (
             <div className="mt-8 border-t border-border pt-6">
-              <h2 className="mb-2 font-display text-sm font-semibold text-ink">Details</h2>
+              <h2 className="mb-2 font-display text-sm font-semibold text-ink">商品详情</h2>
               <p className="whitespace-pre-line text-sm leading-relaxed text-ink-muted">
                 {product.full_description}
               </p>

@@ -14,7 +14,7 @@ class IsOwner(BasePermission):
 class IsVerifiedUser(BasePermission):
     """Grants access only to authenticated users with a phone-verified account."""
 
-    message = "Your phone number must be verified before you can perform this action."
+    message = "完成手机号验证后才能执行此操作。"
 
     def has_permission(self, request, view):
         return bool(
