@@ -18,3 +18,4 @@ python-decouple==3.8
 boto3==1.35.74
 phonenumbers==8.13.51
 django-phonenumber-field==8.0.0
+openai==1.109.1

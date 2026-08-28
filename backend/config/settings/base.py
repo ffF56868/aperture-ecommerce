@@ -245,6 +245,16 @@ OTP_MAX_ATTEMPTS_PER_HOUR = config("OTP_MAX_ATTEMPTS_PER_HOUR", default=5, cast=
 FRONTEND_BASE_URL = config("FRONTEND_BASE_URL", default="http://localhost:5173")
 
 # ---------------------------------------------------------------------------
+# OpenAI Agent
+# ---------------------------------------------------------------------------
+# The key is supplied only through backend/.env and is never sent to the browser.
+OPENAI_API_KEY = config("OPENAI_API_KEY", default="")
+OPENAI_MODEL = config("OPENAI_MODEL", default="gpt-4.1-mini")
+OPENAI_REQUEST_TIMEOUT_SECONDS = config(
+    "OPENAI_REQUEST_TIMEOUT_SECONDS", default=30, cast=int
+)
+
+# ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
 LOGGING = {

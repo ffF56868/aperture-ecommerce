@@ -12,6 +12,7 @@ import { VerifyOtp } from "@/pages/auth/VerifyOtp";
 import { Profile } from "@/pages/profile/Profile";
 import { About } from "@/pages/About";
 import { Contact } from "@/pages/Contact";
+import { AfterSalesAgent } from "@/pages/AfterSalesAgent";
 import { NotFound } from "@/pages/NotFound";
 
 export function App() {
@@ -30,6 +31,7 @@ export function App() {
         <Route path="/profile" element={<Profile />} />
         <Route path="/about" element={<About />} />
         <Route path="/contact" element={<Contact />} />
+        <Route path="/after-sales" element={<AfterSalesAgent />} />
         <Route path="/404" element={<NotFound />} />
         <Route path="*" element={<NotFound />} />
       </Route>

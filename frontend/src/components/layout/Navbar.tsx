@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { Menu, Search, ShoppingBag, User, X } from "lucide-react";
+import { Menu, MessageCircleMore, Search, ShoppingBag, User, X } from "lucide-react";
 import { Container } from "@/components/ui/Container";
 import { Button } from "@/components/ui/Button";
 import { BRAND, NAV_LINKS } from "@/constants";
@@ -54,6 +54,19 @@ export function Navbar() {
               {link.label}
             </NavLink>
           ))}
+          {isAuthenticated && (
+            <NavLink
+              to="/after-sales"
+              className={({ isActive }) =>
+                cn(
+                  "rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                  isActive ? "text-ink" : "text-ink-muted hover:text-ink",
+                )
+              }
+            >
+              售后助手
+            </NavLink>
+          )}
         </nav>
 
         <div className="flex items-center gap-1.5">
@@ -81,6 +94,14 @@ export function Navbar() {
               <User className="h-4.5 w-4.5" />
             </Button>
           </Link>
+
+          {isAuthenticated && (
+            <Link to="/after-sales" className="md:hidden">
+              <Button variant="ghost" size="icon" aria-label="售后助手">
+                <MessageCircleMore className="h-4.5 w-4.5" />
+              </Button>
+            </Link>
+          )}
 
           <Link to="/cart" className="relative">
             <Button variant="ghost" size="icon" aria-label="购物车">
@@ -118,6 +139,15 @@ export function Navbar() {
                 {link.label}
               </NavLink>
             ))}
+            {isAuthenticated && (
+              <NavLink
+                to="/after-sales"
+                onClick={() => setMobileOpen(false)}
+                className="rounded-md px-3 py-2.5 text-sm font-medium text-ink-muted hover:bg-white/[0.04] hover:text-ink"
+              >
+                售后助手
+              </NavLink>
+            )}
           </Container>
         </div>
       )}

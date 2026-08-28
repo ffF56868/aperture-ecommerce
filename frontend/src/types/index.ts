@@ -113,3 +113,30 @@ export interface ApiError {
   detail?: string;
   [key: string]: unknown;
 }
+
+export type AgentMessageRole = "USER" | "ASSISTANT";
+
+export interface AgentMessage {
+  id: number | string;
+  role: AgentMessageRole;
+  content: string;
+  created_at: string;
+}
+
+export interface AgentToolCall {
+  tool_name: string;
+  ok: boolean;
+}
+
+export interface AgentConversationDetail {
+  conversation_id: string;
+  state: string;
+  messages: AgentMessage[];
+}
+
+export interface SendAgentMessageResponse {
+  conversation_id: string;
+  state: string;
+  assistant_message: string;
+  tool_calls: AgentToolCall[];
+}
