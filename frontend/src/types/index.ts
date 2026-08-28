@@ -128,10 +128,45 @@ export interface AgentToolCall {
   ok: boolean;
 }
 
+export interface AfterSalesOrderSummary {
+  id: string;
+  status: OrderStatus;
+  total_amount: string;
+  items: Array<Pick<OrderItem, "product_name" | "quantity">>;
+}
+
+export interface AfterSalesConfirmation {
+  id: string;
+  status: "PENDING" | "REJECTED" | "EXPIRED" | "EXECUTED" | "FAILED";
+  action_type: "REFUND_REQUEST" | "RETURN_REFUND_REQUEST" | "CANCEL_ORDER";
+  action_label: string;
+  policy_key: string;
+  policy_name: string;
+  reason: string;
+  order: AfterSalesOrderSummary | null;
+  expires_at: string;
+  created_at: string;
+}
+
+export interface AfterSalesCase {
+  id: string;
+  case_number: string;
+  case_type: string;
+  case_type_label: string;
+  status: string;
+  status_label: string;
+  priority: "LOW" | "NORMAL" | "HIGH" | "URGENT";
+  reason: string;
+  order: AfterSalesOrderSummary | null;
+  created_at: string;
+}
+
 export interface AgentConversationDetail {
   conversation_id: string;
   state: string;
   messages: AgentMessage[];
+  pending_confirmation: AfterSalesConfirmation | null;
+  recent_cases: AfterSalesCase[];
 }
 
 export interface SendAgentMessageResponse {
@@ -139,4 +174,18 @@ export interface SendAgentMessageResponse {
   state: string;
   assistant_message: string;
   tool_calls: AgentToolCall[];
+  pending_confirmation: AfterSalesConfirmation | null;
+  recent_cases: AfterSalesCase[];
+}
+
+export interface ConfirmationExecutionResponse {
+  confirmation: AfterSalesConfirmation;
+  after_sales_case: AfterSalesCase | null;
+  already_executed: boolean;
+  message: string;
+}
+
+export interface ConfirmationRejectionResponse {
+  confirmation: AfterSalesConfirmation;
+  message: string;
 }

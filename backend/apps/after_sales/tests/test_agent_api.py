@@ -5,7 +5,7 @@ from unittest.mock import patch
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from apps.after_sales.models import AgentConversation, AgentMessage, ToolExecution
+from apps.after_sales.models import AgentConversation, AgentMessage, ConfirmationRequest, ToolExecution
 from apps.after_sales.openai_client import OpenAIConfigurationError
 from apps.authentication.models import User
 from apps.cart_orders.models import Order, OrderItem
@@ -166,3 +166,33 @@ class AfterSalesAgentAPITests(TestCase):
         self.assertIn("查询步骤较多", response.data["assistant_message"])
         self.assertEqual(len(fake_client.responses.calls), 3)
         self.assertEqual(ToolExecution.objects.count(), 3)
+
+    @patch("apps.after_sales.agent_service.get_openai_client")
+    def test_agent_can_prepare_but_not_execute_a_refund_request(self, mock_get_client):
+        self.order.status = Order.Status.PAID
+        self.order.save(update_fields=["status"])
+        fake_client = FakeOpenAIClient(
+            [
+                function_call_response(
+                    "prepare_after_sales_confirmation",
+                    (
+                        '{"order_id":"%s","policy_key":"refund",'
+                        '"reason":"尺码不合适"}' % self.order.id
+                    ),
+                ),
+                text_response("我已生成退款申请，请在右侧确认后提交。", "resp_final"),
+            ]
+        )
+        mock_get_client.return_value = fake_client
+
+        response = self.client.post(
+            "/api/v1/after-sales/conversations/", {"message": "这件衣服尺码不合适，申请退款"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["state"], AgentConversation.State.AWAITING_CONFIRMATION)
+        self.assertEqual(response.data["pending_confirmation"]["status"], ConfirmationRequest.Status.PENDING)
+        self.assertEqual(ConfirmationRequest.objects.count(), 1)
+        self.assertEqual(len(fake_client.responses.calls), 2)
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, Order.Status.PAID)

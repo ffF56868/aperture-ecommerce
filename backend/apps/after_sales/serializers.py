@@ -37,14 +37,63 @@ class AgentToolCallSerializer(serializers.Serializer):
     ok = serializers.BooleanField()
 
 
+class AfterSalesOrderSummarySerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    status = serializers.CharField()
+    total_amount = serializers.DecimalField(max_digits=10, decimal_places=2)
+    items = serializers.ListField(child=serializers.DictField())
+
+
+class ConfirmationResponseSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    status = serializers.CharField()
+    action_type = serializers.CharField()
+    action_label = serializers.CharField()
+    policy_key = serializers.CharField()
+    policy_name = serializers.CharField()
+    reason = serializers.CharField()
+    order = AfterSalesOrderSummarySerializer(allow_null=True)
+    expires_at = serializers.DateTimeField()
+    created_at = serializers.DateTimeField()
+
+
+class AfterSalesCaseResponseSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    case_number = serializers.CharField()
+    case_type = serializers.CharField()
+    case_type_label = serializers.CharField()
+    status = serializers.CharField()
+    status_label = serializers.CharField()
+    priority = serializers.CharField()
+    reason = serializers.CharField()
+    order = AfterSalesOrderSummarySerializer(allow_null=True)
+    created_at = serializers.DateTimeField()
+
+
 class AgentConversationTurnSerializer(serializers.Serializer):
     conversation_id = serializers.UUIDField()
     state = serializers.CharField()
     assistant_message = serializers.CharField()
     tool_calls = AgentToolCallSerializer(many=True)
+    pending_confirmation = ConfirmationResponseSerializer(allow_null=True)
+    recent_cases = AfterSalesCaseResponseSerializer(many=True)
 
 
 class AgentConversationDetailSerializer(serializers.Serializer):
     conversation_id = serializers.UUIDField()
     state = serializers.CharField()
     messages = AgentMessageHistorySerializer(many=True)
+    pending_confirmation = ConfirmationResponseSerializer(allow_null=True)
+    recent_cases = AfterSalesCaseResponseSerializer(many=True)
+
+
+class ConfirmationExecutionSerializer(serializers.Serializer):
+    confirmation = ConfirmationResponseSerializer()
+    after_sales_case = AfterSalesCaseResponseSerializer(allow_null=True)
+    already_executed = serializers.BooleanField()
+    message = serializers.CharField()
+
+
+class ConfirmationRejectionSerializer(serializers.Serializer):
+    confirmation = ConfirmationResponseSerializer()
+    message = serializers.CharField()

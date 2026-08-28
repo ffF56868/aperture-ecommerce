@@ -10,6 +10,14 @@ from apps.cart_orders.models import Order, Payment
 
 from .models import AgentConversation, ToolExecution
 from .policies import AFTER_SALES_POLICIES
+from .workflow import (
+    AfterSalesWorkflowError,
+    create_automatic_case,
+    list_recent_cases,
+    prepare_confirmation,
+    serialize_after_sales_case,
+    serialize_confirmation,
+)
 
 
 class ToolError(Exception):
@@ -39,6 +47,21 @@ class EmptyArgumentsSerializer(StrictToolArgumentsSerializer):
 
 class OrderDetailArgumentsSerializer(StrictToolArgumentsSerializer):
     order_id = serializers.UUIDField()
+
+
+class PrepareConfirmationArgumentsSerializer(StrictToolArgumentsSerializer):
+    order_id = serializers.UUIDField()
+    policy_key = serializers.ChoiceField(choices=("refund", "return-refund", "cancel-order"))
+    reason = serializers.CharField(min_length=2, max_length=500, trim_whitespace=True)
+
+
+class CreateAfterSalesCaseArgumentsSerializer(StrictToolArgumentsSerializer):
+    policy_key = serializers.ChoiceField(
+        choices=("quality-issue", "delivery-issue", "human-service")
+    )
+    reason = serializers.CharField(min_length=2, max_length=500, trim_whitespace=True)
+    # Strict OpenAI schemas require every property; human-service calls pass null.
+    order_id = serializers.UUIDField(allow_null=True)
 
 
 @dataclass(frozen=True)
@@ -93,6 +116,54 @@ ORDER_DETAIL_SCHEMA = {
         }
     },
     "required": ["order_id"],
+    "additionalProperties": False,
+}
+
+PREPARE_CONFIRMATION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "order_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "已核验、且属于当前用户的订单 UUID。",
+        },
+        "policy_key": {
+            "type": "string",
+            "enum": ["refund", "return-refund", "cancel-order"],
+            "description": "要申请的售后类型。",
+        },
+        "reason": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 500,
+            "description": "用户确认过的售后原因。",
+        },
+    },
+    "required": ["order_id", "policy_key", "reason"],
+    "additionalProperties": False,
+}
+
+CREATE_CASE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "policy_key": {
+            "type": "string",
+            "enum": ["quality-issue", "delivery-issue", "human-service"],
+            "description": "可直接创建受控工单的售后类型。",
+        },
+        "reason": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 500,
+            "description": "用户描述的问题或诉求。",
+        },
+        "order_id": {
+            "type": ["string", "null"],
+            "format": "uuid",
+            "description": "质量或物流问题必须提供订单 UUID；人工服务必须传 null。",
+        },
+    },
+    "required": ["policy_key", "reason", "order_id"],
     "additionalProperties": False,
 }
 
@@ -155,6 +226,58 @@ def _list_after_sales_policies(context: ToolContext, arguments: dict[str, Any]) 
     }
 
 
+def _require_conversation(context: ToolContext) -> AgentConversation:
+    if context.conversation is None:
+        raise ToolError("CONVERSATION_REQUIRED", "该售后操作必须在已创建的会话中发起。")
+    return context.conversation
+
+
+def _prepare_after_sales_confirmation(
+    context: ToolContext, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    """Create a short-lived customer confirmation, never execute the action itself."""
+
+    try:
+        confirmation, reused = prepare_confirmation(
+            user=context.user,
+            conversation=_require_conversation(context),
+            order_id=arguments["order_id"],
+            policy_key=arguments["policy_key"],
+            reason=arguments["reason"],
+        )
+    except AfterSalesWorkflowError as exc:
+        raise ToolError(exc.code, exc.message) from exc
+    return {
+        "confirmation": serialize_confirmation(confirmation),
+        "reused": reused,
+        "message": "已生成待用户确认的售后申请，尚未执行取消订单或提交退款工单。",
+    }
+
+
+def _create_after_sales_case(context: ToolContext, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Create only a permitted, non-financial support ticket."""
+
+    try:
+        after_sales_case, reused = create_automatic_case(
+            user=context.user,
+            conversation=_require_conversation(context),
+            policy_key=arguments["policy_key"],
+            reason=arguments["reason"],
+            order_id=arguments.get("order_id"),
+        )
+    except AfterSalesWorkflowError as exc:
+        raise ToolError(exc.code, exc.message) from exc
+    return {
+        "after_sales_case": serialize_after_sales_case(after_sales_case),
+        "reused": reused,
+        "message": "售后工单已创建，等待人工处理。",
+    }
+
+
+def _list_my_after_sales_cases(context: ToolContext, arguments: dict[str, Any]) -> dict[str, Any]:
+    return {"cases": [serialize_after_sales_case(item) for item in list_recent_cases(user=context.user)]}
+
+
 REGISTERED_TOOLS = (
     RegisteredTool(
         name="list_my_orders",
@@ -179,6 +302,37 @@ REGISTERED_TOOLS = (
         arguments_serializer=EmptyArgumentsSerializer,
         action_kind=ToolExecution.ActionKind.READ,
         handler=_list_after_sales_policies,
+    ),
+    RegisteredTool(
+        name="list_my_after_sales_cases",
+        description="查询当前登录用户最近 5 条售后工单及处理状态。不得查询其他用户工单。",
+        parameters=NO_ARGUMENTS_SCHEMA,
+        arguments_serializer=EmptyArgumentsSerializer,
+        action_kind=ToolExecution.ActionKind.READ,
+        handler=_list_my_after_sales_cases,
+    ),
+    RegisteredTool(
+        name="prepare_after_sales_confirmation",
+        description=(
+            "为退款、退货退款或待支付取消订单生成待用户确认的申请卡。"
+            "它绝不会执行订单取消、退款或支付操作；调用前必须已核验订单状态和用户原因。"
+        ),
+        parameters=PREPARE_CONFIRMATION_SCHEMA,
+        arguments_serializer=PrepareConfirmationArgumentsSerializer,
+        action_kind=ToolExecution.ActionKind.WRITE,
+        handler=_prepare_after_sales_confirmation,
+    ),
+    RegisteredTool(
+        name="create_after_sales_case",
+        description=(
+            "仅创建质量问题、物流异常或人工服务的受控售后工单。"
+            "质量和物流问题必须提供订单 UUID；人工服务必须将 order_id 传为 null。"
+            "不得用于退款、退货退款、取消订单或任何资金和订单状态变更。"
+        ),
+        parameters=CREATE_CASE_SCHEMA,
+        arguments_serializer=CreateAfterSalesCaseArgumentsSerializer,
+        action_kind=ToolExecution.ActionKind.WRITE,
+        handler=_create_after_sales_case,
     ),
 )
 

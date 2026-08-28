@@ -3,10 +3,13 @@
 from django.urls import path
 
 from .views import (
+    AfterSalesCaseListView,
     AfterSalesPolicyDetailView,
     AfterSalesPolicyListView,
     AgentConversationDetailView,
     AgentConversationMessageView,
+    ConfirmationExecuteView,
+    ConfirmationRejectView,
 )
 
 
@@ -20,5 +23,16 @@ urlpatterns = [
         "conversations/<uuid:conversation_id>/",
         AgentConversationDetailView.as_view(),
         name="conversation-detail",
+    ),
+    path("cases/", AfterSalesCaseListView.as_view(), name="case-list"),
+    path(
+        "confirmations/<uuid:confirmation_id>/confirm/",
+        ConfirmationExecuteView.as_view(),
+        name="confirmation-execute",
+    ),
+    path(
+        "confirmations/<uuid:confirmation_id>/reject/",
+        ConfirmationRejectView.as_view(),
+        name="confirmation-reject",
     ),
 ]

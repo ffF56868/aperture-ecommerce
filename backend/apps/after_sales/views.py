@@ -16,8 +16,38 @@ from .serializers import (
     AgentConversationDetailSerializer,
     AgentConversationTurnSerializer,
     AgentMessageHistorySerializer,
+    AfterSalesCaseResponseSerializer,
+    ConfirmationExecutionSerializer,
+    ConfirmationRejectionSerializer,
     ConversationMessageRequestSerializer,
 )
+from .workflow import (
+    AfterSalesWorkflowError,
+    execute_confirmation,
+    get_pending_confirmation,
+    list_recent_cases,
+    reject_confirmation,
+    serialize_after_sales_case,
+    serialize_confirmation,
+)
+
+
+def _conversation_workflow_payload(conversation):
+    pending_confirmation = get_pending_confirmation(conversation)
+    return {
+        "pending_confirmation": (
+            serialize_confirmation(pending_confirmation) if pending_confirmation else None
+        ),
+        "recent_cases": [
+            serialize_after_sales_case(after_sales_case)
+            for after_sales_case in list_recent_cases(user=conversation.user)
+        ],
+    }
+
+
+def _workflow_error_response(error: AfterSalesWorkflowError) -> Response:
+    status_code = 404 if error.code == "CONFIRMATION_NOT_FOUND" else 409
+    return Response({"detail": error.message, "code": error.code}, status=status_code)
 
 
 @extend_schema(
@@ -81,7 +111,9 @@ class AgentConversationMessageView(APIView):
                 message=serializer.validated_data["message"],
             )
         except (OpenAIConfigurationError, AfterSalesAgentUnavailableError):
-            if created and not conversation.messages.exists():
+            # A newly created conversation has no usable assistant turn after a failed
+            # model request. Remove it so a later retry cannot inherit a half-finished turn.
+            if created:
                 conversation.delete()
             return Response(
                 {"detail": "智能售后服务暂时不可用，请稍后重试。"}, status=503
@@ -93,6 +125,7 @@ class AgentConversationMessageView(APIView):
                 "state": conversation.state,
                 "assistant_message": result.assistant_message,
                 "tool_calls": result.tool_calls,
+                **_conversation_workflow_payload(conversation),
             },
             status=201 if created else 200,
         )
@@ -118,5 +151,75 @@ class AgentConversationDetailView(APIView):
                 "conversation_id": conversation.id,
                 "state": conversation.state,
                 "messages": AgentMessageHistorySerializer(messages, many=True).data,
+                **_conversation_workflow_payload(conversation),
+            }
+        )
+
+
+@extend_schema(
+    summary="获取当前用户近期售后工单",
+    tags=["售后 Agent"],
+    responses=AfterSalesCaseResponseSerializer(many=True),
+)
+class AfterSalesCaseListView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def get(self, request, *args, **kwargs):
+        return Response(
+            [serialize_after_sales_case(item) for item in list_recent_cases(user=request.user)]
+        )
+
+
+@extend_schema(
+    summary="确认并执行一条售后申请",
+    tags=["售后 Agent"],
+    request=None,
+    responses=ConfirmationExecutionSerializer,
+)
+class ConfirmationExecuteView(APIView):
+    """The browser user's explicit confirmation is the only execution entry point."""
+
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request, confirmation_id, *args, **kwargs):
+        try:
+            execution = execute_confirmation(user=request.user, confirmation_id=confirmation_id)
+        except AfterSalesWorkflowError as exc:
+            return _workflow_error_response(exc)
+
+        message = execution.confirmation.result.get("message", "售后申请已处理。")
+        return Response(
+            {
+                "confirmation": serialize_confirmation(execution.confirmation),
+                "after_sales_case": (
+                    serialize_after_sales_case(execution.after_sales_case)
+                    if execution.after_sales_case
+                    else None
+                ),
+                "already_executed": execution.already_executed,
+                "message": message,
+            }
+        )
+
+
+@extend_schema(
+    summary="取消一条待确认的售后申请",
+    tags=["售后 Agent"],
+    request=None,
+    responses=ConfirmationRejectionSerializer,
+)
+class ConfirmationRejectView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request, confirmation_id, *args, **kwargs):
+        try:
+            confirmation = reject_confirmation(user=request.user, confirmation_id=confirmation_id)
+        except AfterSalesWorkflowError as exc:
+            return _workflow_error_response(exc)
+
+        return Response(
+            {
+                "confirmation": serialize_confirmation(confirmation),
+                "message": confirmation.result.get("message", "已取消本次售后申请。"),
             }
         )
