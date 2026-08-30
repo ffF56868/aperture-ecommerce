@@ -5,7 +5,13 @@ from unittest.mock import patch
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from apps.after_sales.models import AgentConversation, AgentMessage, ConfirmationRequest, ToolExecution
+from apps.after_sales.models import (
+    AfterSalesCase,
+    AgentConversation,
+    AgentMessage,
+    ConfirmationRequest,
+    ToolExecution,
+)
 from apps.after_sales.openai_client import OpenAIConfigurationError
 from apps.authentication.models import User
 from apps.cart_orders.models import Order, OrderItem
@@ -183,6 +189,37 @@ class AfterSalesAgentAPITests(TestCase):
         self.assertIn("查询步骤较多", response.data["assistant_message"])
         self.assertEqual(len(fake_client.responses.calls), 3)
         self.assertEqual(ToolExecution.objects.count(), 3)
+
+    @patch("apps.after_sales.agent_service.get_openai_client")
+    def test_repeated_failure_of_the_same_tool_stops_and_escalates_to_human(self, mock_get_client):
+        fake_client = FakeOpenAIClient(
+            [
+                function_call_response("get_my_order_detail", "{}", "call_1", "resp_1"),
+                function_call_response("get_my_order_detail", "{}", "call_2", "resp_2"),
+            ]
+        )
+        mock_get_client.return_value = fake_client
+
+        response = self.client.post(
+            "/api/v1/after-sales/conversations/", {"message": "帮我查看订单"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertIn("已创建人工工单", response.data["assistant_message"])
+        self.assertEqual(len(fake_client.responses.calls), 2)
+        after_sales_case = AfterSalesCase.objects.get()
+        self.assertEqual(after_sales_case.case_type, AfterSalesCase.CaseType.SYSTEM_EXCEPTION)
+        self.assertEqual(after_sales_case.priority, AfterSalesCase.Priority.HIGH)
+        conversation = AgentConversation.objects.get(id=response.data["conversation_id"])
+        self.assertEqual(conversation.state, AgentConversation.State.ESCALATED)
+        self.assertEqual(conversation.tool_failure_count, 2)
+        self.assertEqual(
+            conversation.context["tool_failure_tracking"],
+            {"tool_name": "get_my_order_detail", "count": 2},
+        )
+        self.assertEqual(
+            ToolExecution.objects.filter(tool_name="escalate_system_exception").count(), 1
+        )
 
     @patch("apps.after_sales.agent_service.get_openai_client")
     def test_agent_can_prepare_but_not_execute_a_refund_request(self, mock_get_client):

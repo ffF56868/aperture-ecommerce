@@ -1,5 +1,6 @@
 from datetime import timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.test import TestCase
 from django.utils import timezone
@@ -141,3 +142,22 @@ class ConfirmationWorkflowAPITests(TestCase):
         confirmation.refresh_from_db()
         self.assertEqual(confirmation.status, ConfirmationRequest.Status.EXPIRED)
         self.assertEqual(AfterSalesCase.objects.count(), 0)
+
+    @patch("apps.after_sales.workflow.AfterSalesCase.objects.create")
+    def test_unexpected_ticket_failure_rolls_back_and_is_audited(self, mock_create):
+        order = self._create_order(Order.Status.PAID)
+        confirmation = self._prepare(order, "refund")
+        mock_create.side_effect = RuntimeError("database write failed")
+
+        response = self.client.post(f"/api/v1/after-sales/confirmations/{confirmation.id}/confirm/")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["code"], "CONFIRMATION_EXECUTION_FAILED")
+        confirmation.refresh_from_db()
+        order.refresh_from_db()
+        self.assertEqual(confirmation.status, ConfirmationRequest.Status.FAILED)
+        self.assertEqual(order.status, Order.Status.PAID)
+        self.assertEqual(AfterSalesCase.objects.count(), 0)
+        execution = ToolExecution.objects.get(confirmation_request=confirmation)
+        self.assertEqual(execution.status, ToolExecution.Status.FAILED)
+        self.assertEqual(execution.error_code, "CONFIRMATION_EXECUTION_FAILED")

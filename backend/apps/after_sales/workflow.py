@@ -1,5 +1,6 @@
 """Transactional confirmation and case workflows for the after-sales Agent."""
 
+import logging
 from dataclasses import dataclass
 from datetime import timedelta
 from time import perf_counter
@@ -13,6 +14,8 @@ from apps.cart_orders.services import OrderTransitionError, cancel_pending_order
 
 from .models import AfterSalesCase, AgentConversation, ConfirmationRequest, ToolExecution
 from .policies import get_policy
+
+logger = logging.getLogger(__name__)
 
 CONFIRMATION_TTL = timedelta(minutes=10)
 OPEN_CASE_STATUSES = (
@@ -255,6 +258,69 @@ def create_automatic_case(
         return after_sales_case, False
 
 
+def create_system_exception_case(
+    *,
+    user: Any,
+    conversation: AgentConversation,
+    tool_name: str,
+    error_code: str,
+    failure_count: int,
+) -> tuple[AfterSalesCase, bool]:
+    """Escalate repeated tool failures once, without exposing internal details to customers."""
+
+    safe_tool_name = tool_name[:100] or "unknown"
+    safe_error_code = error_code[:100] or "TOOL_EXECUTION_FAILED"
+    with transaction.atomic():
+        existing = (
+            AfterSalesCase.objects.select_for_update()
+            .filter(
+                user=user,
+                conversation=conversation,
+                case_type=AfterSalesCase.CaseType.SYSTEM_EXCEPTION,
+                status__in=OPEN_CASE_STATUSES,
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        if existing:
+            after_sales_case = existing
+            reused = True
+        else:
+            after_sales_case = AfterSalesCase.objects.create(
+                user=user,
+                conversation=conversation,
+                case_type=AfterSalesCase.CaseType.SYSTEM_EXCEPTION,
+                priority=AfterSalesCase.Priority.HIGH,
+                reason="售后助手在核验过程中连续遇到异常，已自动转人工处理。",
+                agent_summary=(
+                    f"工具 {safe_tool_name} 连续失败 {failure_count} 次，"
+                    f"最后错误代码：{safe_error_code}。"
+                ),
+            )
+            reused = False
+
+        conversation.state = AgentConversation.State.ESCALATED
+        conversation.save(update_fields=["state", "updated_at"])
+        ToolExecution.objects.create(
+            conversation=conversation,
+            user=user,
+            after_sales_case=after_sales_case,
+            tool_name="escalate_system_exception",
+            action_kind=ToolExecution.ActionKind.WRITE,
+            status=ToolExecution.Status.SUCCEEDED,
+            initiated_by=ToolExecution.Initiator.SYSTEM,
+            agent_role="coordinator",
+            sanitized_arguments={
+                "failed_tool": safe_tool_name,
+                "failure_count": failure_count,
+            },
+            result={"case_number": after_sales_case.case_number, "reused": reused},
+            error_code=safe_error_code,
+            duration_ms=0,
+        )
+        return after_sales_case, reused
+
+
 def _write_human_audit(
     *,
     confirmation: ConfirmationRequest,
@@ -278,6 +344,28 @@ def _write_human_audit(
         error_code=error_code,
         duration_ms=int((perf_counter() - started_at) * 1000),
     )
+
+
+def _mark_confirmation_failed(
+    *,
+    confirmation: ConfirmationRequest,
+    message: str,
+    error_code: str,
+    started_at: float,
+) -> AfterSalesWorkflowError:
+    """Persist a safe failure result after the inner business transaction has rolled back."""
+
+    confirmation.status = ConfirmationRequest.Status.FAILED
+    confirmation.result = {"message": message}
+    confirmation.save(update_fields=["status", "result", "updated_at"])
+    _write_human_audit(
+        confirmation=confirmation,
+        status=ToolExecution.Status.FAILED,
+        result=confirmation.result,
+        error_code=error_code,
+        started_at=started_at,
+    )
+    return AfterSalesWorkflowError(error_code, message)
 
 
 def execute_confirmation(*, user: Any, confirmation_id: Any) -> ConfirmationExecutionResult:
@@ -321,38 +409,43 @@ def execute_confirmation(*, user: Any, confirmation_id: Any) -> ConfirmationExec
                 raise AfterSalesWorkflowError("POLICY_NOT_FOUND", "确认申请对应的规则不存在。")
 
             try:
-                if confirmation.action_type == ConfirmationRequest.ActionType.CANCEL_ORDER:
-                    order = cancel_pending_order(confirmation.order_id, user=user)
-                    after_sales_case = None
-                    result = {"message": "订单已取消。", "order": _order_summary(order)}
-                else:
-                    after_sales_case = AfterSalesCase.objects.create(
-                        user=user,
-                        order=confirmation.order,
-                        conversation=confirmation.conversation,
-                        confirmation_request=confirmation,
-                        case_type=policy["case_type"],
-                        priority=AfterSalesCase.Priority.NORMAL,
-                        reason=confirmation.payload.get("reason", ""),
-                        agent_summary=f"用户确认提交的“{policy['name']}”。",
-                    )
-                    order = confirmation.order
-                    result = {
-                        "message": f"售后工单 {after_sales_case.case_number} 已提交，等待人工审核。",
-                        "after_sales_case": serialize_after_sales_case(after_sales_case),
-                    }
+                # A savepoint lets us record a failed confirmation after rolling back any partial write.
+                with transaction.atomic():
+                    if confirmation.action_type == ConfirmationRequest.ActionType.CANCEL_ORDER:
+                        order = cancel_pending_order(confirmation.order_id, user=user)
+                        after_sales_case = None
+                        result = {"message": "订单已取消。", "order": _order_summary(order)}
+                    else:
+                        after_sales_case = AfterSalesCase.objects.create(
+                            user=user,
+                            order=confirmation.order,
+                            conversation=confirmation.conversation,
+                            confirmation_request=confirmation,
+                            case_type=policy["case_type"],
+                            priority=AfterSalesCase.Priority.NORMAL,
+                            reason=confirmation.payload.get("reason", ""),
+                            agent_summary=f"用户确认提交的“{policy['name']}”。",
+                        )
+                        order = confirmation.order
+                        result = {
+                            "message": f"售后工单 {after_sales_case.case_number} 已提交，等待人工审核。",
+                            "after_sales_case": serialize_after_sales_case(after_sales_case),
+                        }
             except OrderTransitionError as exc:
-                confirmation.status = ConfirmationRequest.Status.FAILED
-                confirmation.result = {"message": str(exc)}
-                confirmation.save(update_fields=["status", "result", "updated_at"])
-                _write_human_audit(
+                error = _mark_confirmation_failed(
                     confirmation=confirmation,
-                    status=ToolExecution.Status.FAILED,
-                    result=confirmation.result,
+                    message=str(exc),
                     error_code="ORDER_TRANSITION_FAILED",
                     started_at=started_at,
                 )
-                error = AfterSalesWorkflowError("ORDER_TRANSITION_FAILED", str(exc))
+            except Exception:
+                logger.exception("After-sales confirmation execution failed")
+                error = _mark_confirmation_failed(
+                    confirmation=confirmation,
+                    message="售后申请处理失败，未创建工单或修改订单，请稍后重新发起。",
+                    error_code="CONFIRMATION_EXECUTION_FAILED",
+                    started_at=started_at,
+                )
             else:
                 confirmation.status = ConfirmationRequest.Status.EXECUTED
                 confirmation.confirmed_at = timezone.now()

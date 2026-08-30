@@ -13,6 +13,7 @@ from .models import AgentConversation, AgentMessage, CustomerMemory, ToolExecuti
 from .openai_client import get_openai_client, get_openai_model
 from .permissions import allowed_permission_levels_for_conversation
 from .tools import ToolContext, execute_tool, get_openai_tool_definitions, sanitize_tool_arguments
+from .workflow import create_system_exception_case
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ MAX_TOOL_ROUNDS = 3
 MAX_HISTORY_MESSAGES = 8
 MAX_MEMORY_ITEMS = 3
 MAX_ASSISTANT_MESSAGE_CHARS = 4000
+MAX_CONSECUTIVE_TOOL_FAILURES = 2
 
 AGENT_INSTRUCTIONS = """你是“聚焦好物”的中文售后助手。你的职责是帮助当前已登录用户查询自己的订单、解释售后规则，并在受控范围内协助发起售后。
 
@@ -182,6 +184,27 @@ def _update_selected_order(conversation: AgentConversation, tool_name: str, resu
         conversation.selected_order_id = order_id
 
 
+def _tool_failure_tracking(conversation: AgentConversation) -> tuple[str, int]:
+    """Return the last failed tool and its consecutive failure count safely."""
+
+    context = conversation.context if isinstance(conversation.context, dict) else {}
+    tracking = context.get("tool_failure_tracking")
+    if not isinstance(tracking, Mapping):
+        return "", 0
+    tool_name = tracking.get("tool_name")
+    count = tracking.get("count")
+    if not isinstance(tool_name, str) or not isinstance(count, int) or count < 1:
+        return "", 0
+    return tool_name[:100], min(count, 99)
+
+
+def _error_code(result: dict[str, Any]) -> str:
+    error = result.get("error")
+    if isinstance(error, Mapping) and isinstance(error.get("code"), str):
+        return error["code"][:100]
+    return "TOOL_EXECUTION_FAILED"
+
+
 def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) -> AgentRunResult:
     """Persist one user turn and complete up to three allowlisted tool rounds."""
 
@@ -210,8 +233,10 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
     )
 
     tool_calls_for_client: list[dict[str, Any]] = []
-    consecutive_tool_failures = conversation.tool_failure_count
+    failed_tool_name, consecutive_tool_failures = _tool_failure_tracking(conversation)
+    context = dict(conversation.context or {})
     final_message = ""
+    escalation_case = None
 
     for round_index in range(MAX_TOOL_ROUNDS):
         function_calls = _function_calls(response)
@@ -222,6 +247,7 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
         outputs = []
         for function_call in function_calls:
             tool_name = str(_item_value(function_call, "name", ""))[:100]
+            tracked_tool_name = tool_name or "unknown"
             call_id = _item_value(function_call, "call_id", "")
             arguments = _parse_arguments(_item_value(function_call, "arguments", ""))
             result = execute_tool(
@@ -238,8 +264,13 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
                 arguments,
             )
             if not result.get("ok"):
-                consecutive_tool_failures = min(99, consecutive_tool_failures + 1)
+                if failed_tool_name == tracked_tool_name:
+                    consecutive_tool_failures = min(99, consecutive_tool_failures + 1)
+                else:
+                    failed_tool_name = tracked_tool_name
+                    consecutive_tool_failures = 1
             else:
+                failed_tool_name = ""
                 consecutive_tool_failures = 0
             _update_selected_order(conversation, tool_name, result)
             AgentMessage.objects.create(
@@ -259,6 +290,28 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
                     "output": json.dumps(result, ensure_ascii=False, default=str),
                 }
             )
+
+            if consecutive_tool_failures >= MAX_CONSECUTIVE_TOOL_FAILURES:
+                try:
+                    escalation_case, _ = create_system_exception_case(
+                        user=user,
+                        conversation=conversation,
+                        tool_name=tracked_tool_name,
+                        error_code=_error_code(result),
+                        failure_count=consecutive_tool_failures,
+                    )
+                except Exception:
+                    logger.exception("Unable to create system exception after repeated tool failures")
+                    final_message = "售后助手连续遇到异常，已停止继续操作，请稍后重试或联系人工客服。"
+                else:
+                    final_message = (
+                        f"我在核验时连续遇到异常，已创建人工工单 "
+                        f"{escalation_case.case_number}，请等待客服处理。"
+                    )
+                break
+
+        if escalation_case is not None or final_message:
+            break
 
         if round_index == MAX_TOOL_ROUNDS - 1:
             final_message = "我已完成必要的信息核验，但本次查询步骤较多。请换一种简短说法继续咨询。"
@@ -293,7 +346,13 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
     conversation.summary = _refresh_conversation_summary(conversation)
     conversation.last_active_at = timezone.now()
     conversation.tool_failure_count = consecutive_tool_failures
-    context = dict(conversation.context or {})
+    if consecutive_tool_failures:
+        context["tool_failure_tracking"] = {
+            "tool_name": failed_tool_name,
+            "count": consecutive_tool_failures,
+        }
+    else:
+        context.pop("tool_failure_tracking", None)
     context["collaboration_plan"] = collaboration_plan.as_payload()
     conversation.context = context
     conversation.save(
