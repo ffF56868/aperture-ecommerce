@@ -16,6 +16,11 @@ from .permissions import (
     tool_permission_matrix,
 )
 from .policies import AFTER_SALES_POLICIES
+from .safety import (
+    inspect_tool_arguments,
+    inspect_tool_name,
+    security_audit_arguments,
+)
 from .workflow import (
     AfterSalesWorkflowError,
     create_automatic_case,
@@ -394,14 +399,25 @@ def sanitize_tool_arguments(arguments: Any) -> dict[str, Any]:
     if not isinstance(arguments, Mapping):
         return {"raw_arguments": "<invalid non-object arguments>"}
 
+    safety = inspect_tool_arguments(arguments)
+    if safety.blocked:
+        return security_audit_arguments(arguments, safety)
+
     sensitive_fragments = ("password", "token", "api_key", "authorization", "secret")
-    sanitized = {}
-    for key, value in arguments.items():
-        if any(fragment in key.lower() for fragment in sensitive_fragments):
-            sanitized[key] = "***"
-        else:
-            sanitized[key] = value
-    return sanitized
+
+    def sanitize_value(value: Any) -> Any:
+        if isinstance(value, Mapping):
+            return {
+                str(key): "***"
+                if any(fragment in str(key).lower() for fragment in sensitive_fragments)
+                else sanitize_value(nested_value)
+                for key, nested_value in value.items()
+            }
+        if isinstance(value, list):
+            return [sanitize_value(item) for item in value]
+        return value
+
+    return sanitize_value(arguments)
 
 
 def _error(code: str, message: str) -> dict[str, Any]:
@@ -431,6 +447,24 @@ def execute_tool(
     """Validate, authorize, audit, and run one allowlisted Agent tool."""
 
     started_at = perf_counter()
+    tool_name_safety = inspect_tool_name(tool_name)
+    if tool_name_safety.blocked:
+        result = _error(tool_name_safety.code, tool_name_safety.message)
+        ToolExecution.objects.create(
+            conversation=context.conversation,
+            user=context.user,
+            agent_role="coordinator",
+            tool_name=tool_name[:100] or "unknown",
+            action_kind=ToolExecution.ActionKind.READ,
+            status=ToolExecution.Status.DENIED,
+            initiated_by=ToolExecution.Initiator.AGENT,
+            sanitized_arguments=security_audit_arguments(arguments, tool_name_safety),
+            result=result,
+            error_code=tool_name_safety.code,
+            duration_ms=int((perf_counter() - started_at) * 1000),
+        )
+        return result
+
     tool = TOOLS_BY_NAME.get(tool_name)
     if tool is None:
         result = _error(
@@ -462,6 +496,18 @@ def execute_tool(
         initiated_by=ToolExecution.Initiator.AGENT,
         sanitized_arguments=sanitize_tool_arguments(arguments),
     )
+
+    argument_safety = inspect_tool_arguments(arguments)
+    if argument_safety.blocked:
+        result = _error(argument_safety.code, argument_safety.message)
+        _update_execution(
+            execution,
+            status=ToolExecution.Status.DENIED,
+            result=result,
+            error_code=argument_safety.code,
+            started_at=started_at,
+        )
+        return result
 
     permission = authorize_tool(
         conversation=context.conversation,

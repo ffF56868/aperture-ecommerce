@@ -191,6 +191,28 @@ class AfterSalesAgentAPITests(TestCase):
         self.assertEqual(ToolExecution.objects.count(), 3)
 
     @patch("apps.after_sales.agent_service.get_openai_client")
+    def test_dangerous_model_tool_call_is_blocked_without_a_follow_up_model_request(
+        self, mock_get_client
+    ):
+        fake_client = FakeOpenAIClient(
+            [function_call_response("run_sql", '{"sql":"SELECT * FROM users"}')]
+        )
+        mock_get_client.return_value = fake_client
+
+        response = self.client.post(
+            "/api/v1/after-sales/conversations/", {"message": "查询订单"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(fake_client.responses.calls), 1)
+        self.assertEqual(response.data["tool_calls"], [{"tool_name": "run_sql", "ok": False}])
+        self.assertIn("已拦截", response.data["assistant_message"])
+        execution = ToolExecution.objects.get()
+        self.assertEqual(execution.error_code, "DANGEROUS_TOOL_CALL_BLOCKED")
+        self.assertEqual(execution.sanitized_arguments, {"blocked": True, "argument_keys": ["sql"]})
+        self.assertEqual(AfterSalesCase.objects.count(), 0)
+
+    @patch("apps.after_sales.agent_service.get_openai_client")
     def test_repeated_failure_of_the_same_tool_stops_and_escalates_to_human(self, mock_get_client):
         fake_client = FakeOpenAIClient(
             [

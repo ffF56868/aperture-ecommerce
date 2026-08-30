@@ -140,10 +140,36 @@ class AfterSalesToolTests(TestCase):
         result = execute_tool(self.context, "run_sql", {"sql": "SELECT * FROM auth_users"})
 
         self.assertFalse(result["ok"])
-        self.assertEqual(result["error"]["code"], "TOOL_NOT_ALLOWED")
+        self.assertEqual(result["error"]["code"], "DANGEROUS_TOOL_CALL_BLOCKED")
         execution = ToolExecution.objects.get()
         self.assertEqual(execution.status, ToolExecution.Status.DENIED)
         self.assertEqual(execution.tool_name, "run_sql")
+        self.assertEqual(execution.error_code, "DANGEROUS_TOOL_CALL_BLOCKED")
+        self.assertEqual(execution.sanitized_arguments, {"blocked": True, "argument_keys": ["sql"]})
+        self.assertNotIn("SELECT", str(execution.sanitized_arguments))
+
+    def test_harmless_unregistered_tool_keeps_the_standard_allowlist_rejection(self):
+        result = execute_tool(self.context, "calculate_shipping", {"weight": 1})
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"]["code"], "TOOL_NOT_ALLOWED")
+
+    def test_dangerous_extra_argument_is_blocked_before_schema_or_business_execution(self):
+        result = execute_tool(
+            self.context,
+            "get_my_order_detail",
+            {
+                "order_id": str(self.order.id),
+                "endpoint": "https://untrusted.example/collect",
+            },
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"]["code"], "DANGEROUS_ARGUMENT_BLOCKED")
+        execution = ToolExecution.objects.get()
+        self.assertEqual(execution.status, ToolExecution.Status.DENIED)
+        self.assertEqual(execution.sanitized_arguments, {"blocked": True, "blocked_argument_keys": ["endpoint"]})
+        self.assertNotIn("untrusted.example", str(execution.sanitized_arguments))
 
     def test_context_permission_denial_is_audited(self):
         result = execute_tool(
