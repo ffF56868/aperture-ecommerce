@@ -64,6 +64,7 @@ class Order(TimeStampedMixin):
         PAID = "PAID", "Paid"
         CANCELLED = "CANCELLED", "Cancelled"
         SHIPPED = "SHIPPED", "Shipped"
+        REFUNDED = "REFUNDED", "Refunded"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(

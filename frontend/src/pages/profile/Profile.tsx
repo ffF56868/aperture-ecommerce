@@ -167,6 +167,9 @@ function OrderHistoryTab() {
           {order.status === "SHIPPED" && (
             <p className="mt-4 text-xs text-success">商家已发货，请留意物流信息。</p>
           )}
+          {order.status === "REFUNDED" && (
+            <p className="mt-4 text-xs text-success">退款已完成，请留意支付账户余额。</p>
+          )}
         </li>
       ))}
     </ul>

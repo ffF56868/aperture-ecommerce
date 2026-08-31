@@ -10,6 +10,12 @@ from .views import (
     AgentConversationMessageView,
     ConfirmationExecuteView,
     ConfirmationRejectView,
+    StaffAfterSalesCaseDetailView,
+    StaffAfterSalesCaseListView,
+    StaffAfterSalesCaseRefundOrderView,
+    StaffAfterSalesCaseShipOrderView,
+    StaffOrderListView,
+    StaffOrderShipView,
 )
 
 
@@ -25,6 +31,28 @@ urlpatterns = [
         name="conversation-detail",
     ),
     path("cases/", AfterSalesCaseListView.as_view(), name="case-list"),
+    path("staff/cases/", StaffAfterSalesCaseListView.as_view(), name="staff-case-list"),
+    path(
+        "staff/cases/<uuid:case_id>/",
+        StaffAfterSalesCaseDetailView.as_view(),
+        name="staff-case-detail",
+    ),
+    path(
+        "staff/cases/<uuid:case_id>/ship-order/",
+        StaffAfterSalesCaseShipOrderView.as_view(),
+        name="staff-case-ship-order",
+    ),
+    path(
+        "staff/cases/<uuid:case_id>/refund-order/",
+        StaffAfterSalesCaseRefundOrderView.as_view(),
+        name="staff-case-refund-order",
+    ),
+    path("staff/orders/", StaffOrderListView.as_view(), name="staff-order-list"),
+    path(
+        "staff/orders/<uuid:order_id>/ship/",
+        StaffOrderShipView.as_view(),
+        name="staff-order-ship",
+    ),
     path(
         "confirmations/<uuid:confirmation_id>/confirm/",
         ConfirmationExecuteView.as_view(),

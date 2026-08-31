@@ -16,6 +16,7 @@ export const ORDER_STATUS_LABEL: Record<string, string> = {
   PAID: "已支付",
   CANCELLED: "已取消",
   SHIPPED: "已发货",
+  REFUNDED: "已退款",
 };
 
 export const ORDER_STATUS_COLOR: Record<string, string> = {
@@ -23,4 +24,5 @@ export const ORDER_STATUS_COLOR: Record<string, string> = {
   PAID: "text-success bg-success/10 border-success/20",
   CANCELLED: "text-danger bg-danger/10 border-danger/20",
   SHIPPED: "text-accent-soft bg-accent/10 border-accent/20",
+  REFUNDED: "text-success bg-success/10 border-success/20",
 };

@@ -105,3 +105,75 @@ class ConfirmationExecutionSerializer(serializers.Serializer):
 class ConfirmationRejectionSerializer(serializers.Serializer):
     confirmation = ConfirmationResponseSerializer()
     message = serializers.CharField()
+
+
+class StaffCustomerSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    username = serializers.CharField()
+    phone_number = serializers.CharField()
+
+
+class StaffAssigneeSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    username = serializers.CharField()
+
+
+class StaffConversationMessageSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    role = serializers.CharField()
+    content = serializers.CharField()
+    created_at = serializers.DateTimeField()
+
+
+class StaffConversationSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    state = serializers.CharField()
+    summary = serializers.CharField()
+    messages = StaffConversationMessageSerializer(many=True)
+
+
+class StaffAfterSalesCaseSerializer(AfterSalesCaseResponseSerializer):
+    updated_at = serializers.DateTimeField()
+    resolved_at = serializers.DateTimeField(allow_null=True)
+    agent_summary = serializers.CharField()
+    staff_note = serializers.CharField()
+    user = StaffCustomerSerializer()
+    assigned_to = StaffAssigneeSerializer(allow_null=True)
+    conversation = StaffConversationSerializer(allow_null=True, required=False)
+
+
+class StaffAfterSalesCaseUpdateSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=(
+        "PENDING_REVIEW",
+        "IN_REVIEW",
+        "NEED_CUSTOMER_INFO",
+        "APPROVED",
+        "REJECTED",
+        "CLOSED",
+        "CANCELLED",
+    ), required=False)
+    staff_note = serializers.CharField(max_length=2000, allow_blank=True, required=False)
+
+    def validate(self, attrs):
+        if not attrs:
+            raise serializers.ValidationError("请提交处理状态或客服备注。")
+        return attrs
+
+
+class StaffOrderItemSerializer(serializers.Serializer):
+    product_name = serializers.CharField()
+    unit_price = serializers.DecimalField(max_digits=10, decimal_places=2)
+    quantity = serializers.IntegerField()
+    line_total = serializers.DecimalField(max_digits=12, decimal_places=2)
+
+
+class StaffOrderSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    status = serializers.CharField()
+    status_label = serializers.CharField()
+    total_amount = serializers.DecimalField(max_digits=10, decimal_places=2)
+    shipping_address = serializers.CharField()
+    user = StaffCustomerSerializer()
+    items = StaffOrderItemSerializer(many=True)
+    created_at = serializers.DateTimeField()
+    updated_at = serializers.DateTimeField()

@@ -56,6 +56,7 @@ export interface User {
   phone_number: string;
   email: string | null;
   is_phone_verified: boolean;
+  is_staff: boolean;
   created_at: string;
 }
 
@@ -95,7 +96,7 @@ export interface OrderItem {
   line_total: string;
 }
 
-export type OrderStatus = "PENDING" | "PAID" | "CANCELLED" | "SHIPPED";
+export type OrderStatus = "PENDING" | "PAID" | "CANCELLED" | "SHIPPED" | "REFUNDED";
 
 export interface Order {
   id: string;
@@ -165,6 +166,72 @@ export interface AfterSalesCase {
   reason: string;
   order: AfterSalesOrderSummary | null;
   created_at: string;
+}
+
+export type AfterSalesCaseStatus =
+  | "PENDING_REVIEW"
+  | "IN_REVIEW"
+  | "NEED_CUSTOMER_INFO"
+  | "APPROVED"
+  | "REJECTED"
+  | "CLOSED"
+  | "CANCELLED";
+
+export interface StaffCustomer {
+  id: number;
+  username: string;
+  phone_number: string;
+}
+
+export interface StaffAssignee {
+  id: number;
+  username: string;
+}
+
+export interface StaffConversationMessage extends AgentMessage {
+  role: AgentMessageRole;
+}
+
+export interface StaffConversation {
+  id: string;
+  state: string;
+  summary: string;
+  messages: StaffConversationMessage[];
+}
+
+export interface StaffAfterSalesCase extends AfterSalesCase {
+  status: AfterSalesCaseStatus;
+  updated_at: string;
+  resolved_at: string | null;
+  agent_summary: string;
+  staff_note: string;
+  user: StaffCustomer;
+  assigned_to: StaffAssignee | null;
+  conversation?: StaffConversation | null;
+}
+
+export interface StaffAfterSalesCaseUpdatePayload {
+  status?: AfterSalesCaseStatus;
+  staff_note?: string;
+}
+
+export interface StaffOrderItem {
+  product_name: string;
+  unit_price: string;
+  quantity: number;
+  line_total: string;
+}
+
+export interface StaffOrder {
+  id: string;
+  status: OrderStatus;
+  status_label: string;
+  total_amount: string;
+  shipping_address: string;
+  user: StaffCustomer;
+  items: StaffOrderItem[];
+  created_at: string;
+  updated_at: string;
 }
 
 export interface AgentConversationDetail {

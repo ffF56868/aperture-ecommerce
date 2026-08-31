@@ -7,12 +7,13 @@ from time import perf_counter
 from typing import Any
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.cart_orders.models import Order
 from apps.cart_orders.services import OrderTransitionError, cancel_pending_order
 
-from .models import AfterSalesCase, AgentConversation, ConfirmationRequest, ToolExecution
+from .models import AfterSalesCase, AgentConversation, AgentMessage, ConfirmationRequest, ToolExecution
 from .policies import get_policy
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,37 @@ CASE_PRIORITY_BY_POLICY = {
     "quality-issue": AfterSalesCase.Priority.HIGH,
     "delivery-issue": AfterSalesCase.Priority.NORMAL,
     "human-service": AfterSalesCase.Priority.NORMAL,
+}
+STAFF_CASE_STATUS_TRANSITIONS = {
+    AfterSalesCase.Status.PENDING_REVIEW: frozenset(
+        {
+            AfterSalesCase.Status.IN_REVIEW,
+            AfterSalesCase.Status.NEED_CUSTOMER_INFO,
+            AfterSalesCase.Status.APPROVED,
+            AfterSalesCase.Status.REJECTED,
+            AfterSalesCase.Status.CLOSED,
+        }
+    ),
+    AfterSalesCase.Status.IN_REVIEW: frozenset(
+        {
+            AfterSalesCase.Status.NEED_CUSTOMER_INFO,
+            AfterSalesCase.Status.APPROVED,
+            AfterSalesCase.Status.REJECTED,
+            AfterSalesCase.Status.CLOSED,
+        }
+    ),
+    AfterSalesCase.Status.NEED_CUSTOMER_INFO: frozenset(
+        {
+            AfterSalesCase.Status.IN_REVIEW,
+            AfterSalesCase.Status.APPROVED,
+            AfterSalesCase.Status.REJECTED,
+            AfterSalesCase.Status.CLOSED,
+        }
+    ),
+    AfterSalesCase.Status.APPROVED: frozenset({AfterSalesCase.Status.CLOSED}),
+    AfterSalesCase.Status.REJECTED: frozenset({AfterSalesCase.Status.CLOSED}),
+    AfterSalesCase.Status.CLOSED: frozenset(),
+    AfterSalesCase.Status.CANCELLED: frozenset(),
 }
 
 
@@ -159,6 +191,329 @@ def list_recent_cases(*, user: Any, limit: int = 5) -> list[AfterSalesCase]:
         .prefetch_related("order__items")
         .order_by("-created_at")[:limit]
     )
+
+
+def list_staff_cases(
+    *,
+    status: str | None = None,
+    priority: str | None = None,
+    search: str | None = None,
+    limit: int = 100,
+) -> list[AfterSalesCase]:
+    """Return a bounded, searchable work queue for authenticated staff."""
+
+    cases = (
+        AfterSalesCase.objects.select_related("user", "order", "assigned_to", "conversation")
+        .prefetch_related("order__items")
+        .order_by("-updated_at")
+    )
+    if status:
+        cases = cases.filter(status=status)
+    if priority:
+        cases = cases.filter(priority=priority)
+    if search:
+        cases = cases.filter(
+            Q(case_number__icontains=search)
+            | Q(user__username__icontains=search)
+            | Q(reason__icontains=search)
+        )
+    return list(cases[:limit])
+
+
+def list_staff_orders(
+    *,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = 100,
+) -> list[Order]:
+    """Return a bounded fulfillment queue, independent of after-sales tickets."""
+
+    orders = Order.objects.select_related("user").prefetch_related("items").order_by("-created_at")
+    if status:
+        orders = orders.filter(status=status)
+    if search:
+        orders = orders.filter(
+            Q(user__username__icontains=search) | Q(items__product_name__icontains=search)
+        ).distinct()
+    return list(orders[:limit])
+
+
+def serialize_staff_order(order: Order) -> dict[str, Any]:
+    """Return the operational fields staff need to fulfill one order."""
+
+    return {
+        "id": str(order.id),
+        "status": order.status,
+        "status_label": order.get_status_display(),
+        "total_amount": str(order.total_amount),
+        "shipping_address": order.shipping_address,
+        "user": {
+            "id": order.user_id,
+            "username": order.user.username,
+            "phone_number": str(order.user.phone_number),
+        },
+        "items": [
+            {
+                "product_name": item.product_name,
+                "unit_price": str(item.unit_price),
+                "quantity": item.quantity,
+                "line_total": str(item.line_total),
+            }
+            for item in order.items.all()
+        ],
+        "created_at": order.created_at.isoformat(),
+        "updated_at": order.updated_at.isoformat(),
+    }
+
+
+def serialize_staff_case(
+    after_sales_case: AfterSalesCase,
+    *,
+    include_conversation: bool = False,
+) -> dict[str, Any]:
+    """Return staff-visible case data without exposing raw model tool activity."""
+
+    payload = {
+        **serialize_after_sales_case(after_sales_case),
+        "updated_at": after_sales_case.updated_at.isoformat(),
+        "resolved_at": (
+            after_sales_case.resolved_at.isoformat() if after_sales_case.resolved_at else None
+        ),
+        "agent_summary": after_sales_case.agent_summary,
+        "staff_note": after_sales_case.staff_note,
+        "user": {
+            "id": after_sales_case.user_id,
+            "username": after_sales_case.user.username,
+            "phone_number": str(after_sales_case.user.phone_number),
+        },
+        "assigned_to": (
+            {"id": after_sales_case.assigned_to_id, "username": after_sales_case.assigned_to.username}
+            if after_sales_case.assigned_to_id
+            else None
+        ),
+    }
+    if include_conversation:
+        conversation = after_sales_case.conversation
+        payload["conversation"] = (
+            {
+                "id": str(conversation.id),
+                "state": conversation.state,
+                "summary": conversation.summary,
+                "messages": [
+                    {
+                        "id": message.id,
+                        "role": message.role,
+                        "content": message.content,
+                        "created_at": message.created_at.isoformat(),
+                    }
+                    for message in conversation.messages.filter(
+                        role__in=(AgentMessage.Role.USER, AgentMessage.Role.ASSISTANT)
+                    ).order_by("created_at")
+                ],
+            }
+            if conversation
+            else None
+        )
+    return payload
+
+
+def update_staff_case(
+    *,
+    staff_user: Any,
+    case_id: Any,
+    status: str | None = None,
+    staff_note: str | None = None,
+) -> AfterSalesCase:
+    """Perform one validated staff resolution action and write a human audit record."""
+
+    with transaction.atomic():
+        try:
+            after_sales_case = (
+                AfterSalesCase.objects.select_for_update(of=("self",))
+                .select_related("user", "order", "assigned_to", "conversation")
+                .prefetch_related("order__items")
+                .get(id=case_id)
+            )
+        except AfterSalesCase.DoesNotExist as exc:
+            raise AfterSalesWorkflowError("CASE_NOT_FOUND", "未找到该售后工单。") from exc
+
+        changed_fields = ["updated_at"]
+        previous_status = after_sales_case.status
+        if status and status != previous_status:
+            allowed_statuses = STAFF_CASE_STATUS_TRANSITIONS.get(previous_status, frozenset())
+            if status not in allowed_statuses:
+                raise AfterSalesWorkflowError(
+                    "INVALID_CASE_TRANSITION",
+                    "当前工单状态不能流转到所选状态。",
+                )
+            after_sales_case.status = status
+            changed_fields.append("status")
+            if status in {
+                AfterSalesCase.Status.APPROVED,
+                AfterSalesCase.Status.REJECTED,
+                AfterSalesCase.Status.CLOSED,
+            }:
+                after_sales_case.resolved_at = timezone.now()
+                changed_fields.append("resolved_at")
+
+        if staff_note is not None and staff_note != after_sales_case.staff_note:
+            after_sales_case.staff_note = staff_note
+            changed_fields.append("staff_note")
+
+        if len(changed_fields) == 1:
+            raise AfterSalesWorkflowError("NO_CASE_CHANGES", "请修改处理状态或客服备注后再保存。")
+
+        after_sales_case.assigned_to = staff_user
+        changed_fields.append("assigned_to")
+        after_sales_case.save(update_fields=changed_fields)
+        ToolExecution.objects.create(
+            conversation=after_sales_case.conversation,
+            user=after_sales_case.user,
+            after_sales_case=after_sales_case,
+            tool_name="staff_update_after_sales_case",
+            action_kind=ToolExecution.ActionKind.WRITE,
+            status=ToolExecution.Status.SUCCEEDED,
+            initiated_by=ToolExecution.Initiator.HUMAN,
+            agent_role="staff_workbench",
+            sanitized_arguments={
+                "case_number": after_sales_case.case_number,
+                "previous_status": previous_status,
+                "status": after_sales_case.status,
+                "note_updated": staff_note is not None,
+            },
+            result={"assigned_to": staff_user.username},
+            duration_ms=0,
+        )
+        return after_sales_case
+
+
+def ship_staff_case_order(*, staff_user: Any, case_id: Any) -> AfterSalesCase:
+    """Mark the paid order attached to a case as shipped and audit the human action."""
+
+    with transaction.atomic():
+        try:
+            after_sales_case = AfterSalesCase.objects.select_for_update().get(id=case_id)
+        except AfterSalesCase.DoesNotExist as exc:
+            raise AfterSalesWorkflowError("CASE_NOT_FOUND", "未找到该售后工单。") from exc
+
+        if not after_sales_case.order_id:
+            raise AfterSalesWorkflowError("CASE_ORDER_NOT_FOUND", "该工单没有关联订单，无法发货。")
+
+        order = Order.objects.select_for_update().get(id=after_sales_case.order_id)
+        if order.status != Order.Status.PAID:
+            raise AfterSalesWorkflowError("ORDER_NOT_READY_TO_SHIP", "只有已支付订单可以标记为已发货。")
+
+        order.status = Order.Status.SHIPPED
+        order.save(update_fields=["status"])
+        after_sales_case.assigned_to = staff_user
+        after_sales_case.save(update_fields=["assigned_to", "updated_at"])
+        ToolExecution.objects.create(
+            conversation_id=after_sales_case.conversation_id,
+            user_id=after_sales_case.user_id,
+            after_sales_case=after_sales_case,
+            tool_name="staff_ship_order",
+            action_kind=ToolExecution.ActionKind.WRITE,
+            status=ToolExecution.Status.SUCCEEDED,
+            initiated_by=ToolExecution.Initiator.HUMAN,
+            agent_role="staff_workbench",
+            sanitized_arguments={
+                "case_number": after_sales_case.case_number,
+                "order_id": str(order.id),
+                "previous_status": Order.Status.PAID,
+                "status": Order.Status.SHIPPED,
+            },
+            result={"assigned_to": staff_user.username},
+            duration_ms=0,
+        )
+        return AfterSalesCase.objects.select_related("user", "order", "assigned_to", "conversation").prefetch_related(
+            "order__items"
+        ).get(id=after_sales_case.id)
+
+
+def refund_staff_case_order(*, staff_user: Any, case_id: Any) -> AfterSalesCase:
+    """Finish an approved refund case by marking its linked order as refunded."""
+
+    with transaction.atomic():
+        try:
+            after_sales_case = AfterSalesCase.objects.select_for_update().get(id=case_id)
+        except AfterSalesCase.DoesNotExist as exc:
+            raise AfterSalesWorkflowError("CASE_NOT_FOUND", "未找到该售后工单。") from exc
+
+        if after_sales_case.case_type not in {
+            AfterSalesCase.CaseType.REFUND,
+            AfterSalesCase.CaseType.RETURN_REFUND,
+        }:
+            raise AfterSalesWorkflowError("CASE_NOT_REFUNDABLE", "只有退款或退货退款工单可以标记已退款。")
+        if after_sales_case.status != AfterSalesCase.Status.APPROVED:
+            raise AfterSalesWorkflowError("CASE_NOT_APPROVED_FOR_REFUND", "请先通过该退款工单，再标记已退款。")
+        if not after_sales_case.order_id:
+            raise AfterSalesWorkflowError("CASE_ORDER_NOT_FOUND", "该工单没有关联订单，无法标记退款。")
+
+        order = Order.objects.select_for_update().get(id=after_sales_case.order_id)
+        if order.status not in {Order.Status.PAID, Order.Status.SHIPPED}:
+            raise AfterSalesWorkflowError("ORDER_NOT_REFUNDABLE", "当前订单状态不能标记为已退款。")
+
+        previous_status = order.status
+        order.status = Order.Status.REFUNDED
+        order.save(update_fields=["status", "updated_at"])
+        after_sales_case.status = AfterSalesCase.Status.CLOSED
+        after_sales_case.assigned_to = staff_user
+        after_sales_case.resolved_at = timezone.now()
+        after_sales_case.save(update_fields=["status", "assigned_to", "resolved_at", "updated_at"])
+        ToolExecution.objects.create(
+            conversation_id=after_sales_case.conversation_id,
+            user_id=after_sales_case.user_id,
+            after_sales_case=after_sales_case,
+            tool_name="staff_refund_order",
+            action_kind=ToolExecution.ActionKind.WRITE,
+            status=ToolExecution.Status.SUCCEEDED,
+            initiated_by=ToolExecution.Initiator.HUMAN,
+            agent_role="staff_workbench",
+            sanitized_arguments={
+                "case_number": after_sales_case.case_number,
+                "case_type": after_sales_case.case_type,
+                "order_id": str(order.id),
+                "previous_status": previous_status,
+                "status": Order.Status.REFUNDED,
+            },
+            result={"assigned_to": staff_user.username},
+            duration_ms=0,
+        )
+        return AfterSalesCase.objects.select_related("user", "order", "assigned_to", "conversation").prefetch_related(
+            "order__items"
+        ).get(id=after_sales_case.id)
+
+
+def ship_staff_order(*, staff_user: Any, order_id: Any) -> Order:
+    """Mark any paid order as shipped from the staff fulfillment queue."""
+
+    with transaction.atomic():
+        try:
+            order = Order.objects.select_for_update().get(id=order_id)
+        except Order.DoesNotExist as exc:
+            raise AfterSalesWorkflowError("ORDER_NOT_FOUND", "未找到该订单。") from exc
+
+        if order.status != Order.Status.PAID:
+            raise AfterSalesWorkflowError("ORDER_NOT_READY_TO_SHIP", "只有已支付订单可以标记为已发货。")
+
+        order.status = Order.Status.SHIPPED
+        order.save(update_fields=["status", "updated_at"])
+        ToolExecution.objects.create(
+            user_id=order.user_id,
+            tool_name="staff_ship_order",
+            action_kind=ToolExecution.ActionKind.WRITE,
+            status=ToolExecution.Status.SUCCEEDED,
+            initiated_by=ToolExecution.Initiator.HUMAN,
+            agent_role="staff_workbench",
+            sanitized_arguments={
+                "order_id": str(order.id),
+                "previous_status": Order.Status.PAID,
+                "status": Order.Status.SHIPPED,
+            },
+            result={"assigned_to": staff_user.username},
+            duration_ms=0,
+        )
+        return Order.objects.select_related("user").prefetch_related("items").get(id=order.id)
 
 
 def prepare_confirmation(

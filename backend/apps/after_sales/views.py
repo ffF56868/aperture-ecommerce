@@ -3,13 +3,15 @@
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
 from rest_framework.exceptions import NotFound
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.cart_orders.models import Order
+
 from .agent_service import AfterSalesAgentUnavailableError, run_agent_turn
 from .collaboration import get_stored_plan_payload
-from .models import AgentConversation, AgentMessage
+from .models import AfterSalesCase, AgentConversation, AgentMessage
 from .openai_client import OpenAIConfigurationError
 from .policies import AFTER_SALES_POLICIES, get_policy
 from .serializers import (
@@ -18,6 +20,9 @@ from .serializers import (
     AgentConversationTurnSerializer,
     AgentMessageHistorySerializer,
     AfterSalesCaseResponseSerializer,
+    StaffAfterSalesCaseSerializer,
+    StaffAfterSalesCaseUpdateSerializer,
+    StaffOrderSerializer,
     ConfirmationExecutionSerializer,
     ConfirmationRejectionSerializer,
     ConversationMessageRequestSerializer,
@@ -27,9 +32,17 @@ from .workflow import (
     execute_confirmation,
     get_pending_confirmation,
     list_recent_cases,
+    list_staff_cases,
+    list_staff_orders,
     reject_confirmation,
     serialize_after_sales_case,
     serialize_confirmation,
+    serialize_staff_case,
+    serialize_staff_order,
+    refund_staff_case_order,
+    ship_staff_case_order,
+    ship_staff_order,
+    update_staff_case,
 )
 
 
@@ -48,7 +61,7 @@ def _conversation_workflow_payload(conversation):
 
 
 def _workflow_error_response(error: AfterSalesWorkflowError) -> Response:
-    status_code = 404 if error.code == "CONFIRMATION_NOT_FOUND" else 409
+    status_code = 404 if error.code in {"CONFIRMATION_NOT_FOUND", "CASE_NOT_FOUND", "ORDER_NOT_FOUND"} else 409
     return Response({"detail": error.message, "code": error.code}, status=status_code)
 
 
@@ -170,6 +183,138 @@ class AfterSalesCaseListView(APIView):
         return Response(
             [serialize_after_sales_case(item) for item in list_recent_cases(user=request.user)]
         )
+
+
+@extend_schema(
+    summary="客服工作台：获取售后工单队列",
+    tags=["客服工作台"],
+    responses=StaffAfterSalesCaseSerializer(many=True),
+)
+class StaffAfterSalesCaseListView(APIView):
+    """Return the staff-only work queue; regular users cannot access this endpoint."""
+
+    permission_classes = (IsAdminUser,)
+
+    def get(self, request, *args, **kwargs):
+        status = request.query_params.get("status") or None
+        priority = request.query_params.get("priority") or None
+        search = (request.query_params.get("search") or "").strip()[:100] or None
+        case_statuses = {value for value, _ in AfterSalesCase.Status.choices}
+        case_priorities = {value for value, _ in AfterSalesCase.Priority.choices}
+        if status and status not in case_statuses:
+            return Response({"detail": "工单状态筛选条件无效。"}, status=400)
+        if priority and priority not in case_priorities:
+            return Response({"detail": "优先级筛选条件无效。"}, status=400)
+        return Response(
+            [
+                serialize_staff_case(after_sales_case)
+                for after_sales_case in list_staff_cases(
+                    status=status,
+                    priority=priority,
+                    search=search,
+                )
+            ]
+        )
+
+
+@extend_schema(
+    summary="客服工作台：获取售后工单详情",
+    tags=["客服工作台"],
+    responses=StaffAfterSalesCaseSerializer,
+)
+class StaffAfterSalesCaseDetailView(APIView):
+    permission_classes = (IsAdminUser,)
+
+    def get(self, request, case_id, *args, **kwargs):
+        after_sales_case = get_object_or_404(
+            AfterSalesCase.objects.select_related("user", "order", "assigned_to", "conversation")
+            .prefetch_related("order__items"),
+            id=case_id,
+        )
+        return Response(serialize_staff_case(after_sales_case, include_conversation=True))
+
+    def patch(self, request, case_id, *args, **kwargs):
+        serializer = StaffAfterSalesCaseUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            after_sales_case = update_staff_case(
+                staff_user=request.user,
+                case_id=case_id,
+                **serializer.validated_data,
+            )
+        except AfterSalesWorkflowError as exc:
+            return _workflow_error_response(exc)
+        return Response(serialize_staff_case(after_sales_case, include_conversation=True))
+
+
+@extend_schema(
+    summary="客服工作台：标记关联订单已发货",
+    tags=["客服工作台"],
+    responses=StaffAfterSalesCaseSerializer,
+)
+class StaffAfterSalesCaseShipOrderView(APIView):
+    permission_classes = (IsAdminUser,)
+
+    def post(self, request, case_id, *args, **kwargs):
+        try:
+            after_sales_case = ship_staff_case_order(staff_user=request.user, case_id=case_id)
+        except AfterSalesWorkflowError as exc:
+            return _workflow_error_response(exc)
+        return Response(serialize_staff_case(after_sales_case, include_conversation=True))
+
+
+@extend_schema(
+    summary="客服工作台：标记关联订单已退款",
+    tags=["客服工作台"],
+    responses=StaffAfterSalesCaseSerializer,
+)
+class StaffAfterSalesCaseRefundOrderView(APIView):
+    permission_classes = (IsAdminUser,)
+
+    def post(self, request, case_id, *args, **kwargs):
+        try:
+            after_sales_case = refund_staff_case_order(staff_user=request.user, case_id=case_id)
+        except AfterSalesWorkflowError as exc:
+            return _workflow_error_response(exc)
+        return Response(serialize_staff_case(after_sales_case, include_conversation=True))
+
+
+@extend_schema(
+    summary="客服工作台：获取订单发货队列",
+    tags=["客服工作台"],
+    responses=StaffOrderSerializer(many=True),
+)
+class StaffOrderListView(APIView):
+    permission_classes = (IsAdminUser,)
+
+    def get(self, request, *args, **kwargs):
+        status = request.query_params.get("status") or None
+        search = (request.query_params.get("search") or "").strip()[:100] or None
+        order_statuses = {value for value, _ in Order.Status.choices}
+        if status and status not in order_statuses:
+            return Response({"detail": "订单状态筛选条件无效。"}, status=400)
+        return Response(
+            [
+                serialize_staff_order(order)
+                for order in list_staff_orders(status=status, search=search)
+            ]
+        )
+
+
+@extend_schema(
+    summary="客服工作台：标记订单已发货",
+    tags=["客服工作台"],
+    responses=StaffOrderSerializer,
+)
+class StaffOrderShipView(APIView):
+    permission_classes = (IsAdminUser,)
+
+    def post(self, request, order_id, *args, **kwargs):
+        try:
+            order = ship_staff_order(staff_user=request.user, order_id=order_id)
+        except AfterSalesWorkflowError as exc:
+            return _workflow_error_response(exc)
+        return Response(serialize_staff_order(order))
 
 
 @extend_schema(

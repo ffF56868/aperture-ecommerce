@@ -5,11 +5,25 @@ import type {
   ConfirmationExecutionResponse,
   ConfirmationRejectionResponse,
   SendAgentMessageResponse,
+  StaffAfterSalesCase,
+  StaffAfterSalesCaseUpdatePayload,
+  StaffOrder,
 } from "@/types";
 
 interface SendAgentMessagePayload {
   message: string;
   conversation_id?: string | null;
+}
+
+export interface StaffCaseFilters {
+  status?: string;
+  priority?: string;
+  search?: string;
+}
+
+export interface StaffOrderFilters {
+  status?: string;
+  search?: string;
 }
 
 export const afterSalesApi = {
@@ -25,6 +39,55 @@ export const afterSalesApi = {
 
   getCases: async (): Promise<AfterSalesCase[]> => {
     const { data } = await apiClient.get<AfterSalesCase[]>("/after-sales/cases/");
+    return data;
+  },
+
+  listStaffCases: async (filters: StaffCaseFilters = {}): Promise<StaffAfterSalesCase[]> => {
+    const { data } = await apiClient.get<StaffAfterSalesCase[]>("/after-sales/staff/cases/", {
+      params: filters,
+    });
+    return data;
+  },
+
+  getStaffCase: async (caseId: string): Promise<StaffAfterSalesCase> => {
+    const { data } = await apiClient.get<StaffAfterSalesCase>(`/after-sales/staff/cases/${caseId}/`);
+    return data;
+  },
+
+  updateStaffCase: async (
+    caseId: string,
+    payload: StaffAfterSalesCaseUpdatePayload,
+  ): Promise<StaffAfterSalesCase> => {
+    const { data } = await apiClient.patch<StaffAfterSalesCase>(
+      `/after-sales/staff/cases/${caseId}/`,
+      payload,
+    );
+    return data;
+  },
+
+  shipStaffCaseOrder: async (caseId: string): Promise<StaffAfterSalesCase> => {
+    const { data } = await apiClient.post<StaffAfterSalesCase>(
+      `/after-sales/staff/cases/${caseId}/ship-order/`,
+    );
+    return data;
+  },
+
+  refundStaffCaseOrder: async (caseId: string): Promise<StaffAfterSalesCase> => {
+    const { data } = await apiClient.post<StaffAfterSalesCase>(
+      `/after-sales/staff/cases/${caseId}/refund-order/`,
+    );
+    return data;
+  },
+
+  listStaffOrders: async (filters: StaffOrderFilters = {}): Promise<StaffOrder[]> => {
+    const { data } = await apiClient.get<StaffOrder[]>("/after-sales/staff/orders/", {
+      params: filters,
+    });
+    return data;
+  },
+
+  shipStaffOrder: async (orderId: string): Promise<StaffOrder> => {
+    const { data } = await apiClient.post<StaffOrder>(`/after-sales/staff/orders/${orderId}/ship/`);
     return data;
   },
 

@@ -159,7 +159,15 @@ class LogoutSerializer(serializers.Serializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ("id", "username", "phone_number", "email", "is_phone_verified", "created_at")
+        fields = (
+            "id",
+            "username",
+            "phone_number",
+            "email",
+            "is_phone_verified",
+            "is_staff",
+            "created_at",
+        )
         read_only_fields = fields
 
 
