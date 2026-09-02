@@ -24,7 +24,7 @@ SPECIALISTS = {
         key="policy_advisor",
         label="售后规则专员",
         responsibility="只解释已配置的售后规则，不承诺退款或审核结果。",
-        tool_names=("list_after_sales_policies",),
+        tool_names=("list_after_sales_policies", "search_after_sales_knowledge"),
     ),
     "case_tracker": Specialist(
         key="case_tracker",
@@ -121,8 +121,27 @@ def build_collaboration_plan(message: str) -> CollaborationPlan:
     ):
         add_role("policy_advisor")
         add_role("workflow_specialist")
-    if any(term in normalized for term in ("规则", "能不能", "可以吗", "售后")):
+    knowledge_terms = (
+        "规则",
+        "能不能",
+        "可以吗",
+        "售后",
+        "尺码",
+        "大小",
+        "面料",
+        "材质",
+        "洗涤",
+        "保养",
+        "褪色",
+        "起球",
+        "多久",
+        "时效",
+    )
+    if any(term in normalized for term in knowledge_terms):
         add_role("policy_advisor")
+    if any(term in normalized for term in knowledge_terms):
+        # A no-match knowledge search is deterministically escalated by the backend.
+        add_role("workflow_specialist")
 
     if not role_keys:
         add_role("policy_advisor")

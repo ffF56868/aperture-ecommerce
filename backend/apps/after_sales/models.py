@@ -5,6 +5,7 @@ import uuid
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
+from pgvector.django import HnswIndex, VectorField
 
 from core.mixins import TimeStampedMixin, UUIDPrimaryKeyMixin
 
@@ -290,6 +291,63 @@ class CustomerMemory(TimeStampedMixin):
 
     def __str__(self) -> str:
         return f"{self.user} - {self.get_memory_type_display()}：{self.key}"
+
+
+class KnowledgeDocument(UUIDPrimaryKeyMixin, TimeStampedMixin):
+    """Trusted, staff-maintained source documents for after-sales answers."""
+
+    title = models.CharField("标题", max_length=160)
+    slug = models.SlugField("稳定标识", max_length=100, unique=True)
+    category = models.CharField("分类", max_length=64)
+    source_label = models.CharField("引用名称", max_length=160)
+    content = models.TextField("知识内容")
+    is_published = models.BooleanField("允许 Agent 检索", default=True)
+
+    class Meta:
+        verbose_name = "售后知识文档"
+        verbose_name_plural = "售后知识文档"
+        ordering = ("category", "title")
+
+    def __str__(self) -> str:
+        return self.title
+
+
+class KnowledgeChunk(UUIDPrimaryKeyMixin, TimeStampedMixin):
+    """One embedded, citation-ready chunk from a trusted knowledge document."""
+
+    document = models.ForeignKey(
+        KnowledgeDocument,
+        verbose_name="所属文档",
+        on_delete=models.CASCADE,
+        related_name="chunks",
+    )
+    sequence = models.PositiveSmallIntegerField("切片序号")
+    content = models.TextField("切片内容")
+    content_hash = models.CharField("内容哈希", max_length=64)
+    embedding = VectorField("向量", dimensions=1536, null=True, blank=True)
+
+    class Meta:
+        verbose_name = "售后知识切片"
+        verbose_name_plural = "售后知识切片"
+        ordering = ("document", "sequence")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("document", "sequence"), name="after_sales_unique_knowledge_chunk"
+            )
+        ]
+        indexes = [
+            models.Index(fields=("document", "sequence"), name="after_sales_documen_6ba5ae_idx"),
+            HnswIndex(
+                name="as_knowledge_emb_hnsw",
+                fields=["embedding"],
+                m=16,
+                ef_construction=64,
+                opclasses=["vector_cosine_ops"],
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.document.title} #{self.sequence}"
 
 
 class ToolExecution(UUIDPrimaryKeyMixin, TimeStampedMixin):

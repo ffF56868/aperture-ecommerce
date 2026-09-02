@@ -12,6 +12,7 @@ from apps.after_sales.models import (
     ConfirmationRequest,
     ToolExecution,
 )
+from apps.after_sales.knowledge import KnowledgeSearchResult
 from apps.after_sales.openai_client import OpenAIConfigurationError
 from apps.authentication.models import User
 from apps.cart_orders.models import Order, OrderItem
@@ -143,6 +144,75 @@ class AfterSalesAgentAPITests(TestCase):
         self.assertEqual(response.data["tool_calls"], [])
         self.assertEqual(AgentMessage.objects.filter(role=AgentMessage.Role.TOOL).count(), 0)
         self.assertEqual(len(fake_client.responses.calls), 1)
+
+    @patch("apps.after_sales.tools.search_after_sales_knowledge")
+    @patch("apps.after_sales.agent_service.get_openai_client")
+    def test_knowledge_answer_cites_the_retrieved_source(self, mock_get_client, mock_search):
+        mock_search.return_value = KnowledgeSearchResult(
+            matches=[
+                {
+                    "title": "服装尺码选择建议",
+                    "source_label": "商品咨询：服装尺码选择建议",
+                    "category": "商品咨询",
+                    "excerpt": "尺码以商品详情页和穿着偏好为准。",
+                    "similarity": 0.92,
+                }
+            ],
+            requires_human_escalation=False,
+            message="已检索到可信售后知识，可据此回答并引用来源。",
+        )
+        mock_get_client.return_value = FakeOpenAIClient(
+            [
+                function_call_response(
+                    "search_after_sales_knowledge", '{"question":"衣服尺码怎么选"}'
+                ),
+                text_response("建议结合商品详情页的尺码信息和自己的穿着偏好选择。"),
+            ]
+        )
+
+        response = self.client.post(
+            "/api/v1/after-sales/conversations/", {"message": "衣服尺码怎么选"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertIn("参考知识库：商品咨询：服装尺码选择建议", response.data["assistant_message"])
+        self.assertEqual(
+            response.data["tool_calls"], [{"tool_name": "search_after_sales_knowledge", "ok": True}]
+        )
+        self.assertEqual(
+            [item["key"] for item in response.data["collaboration_plan"]],
+            ["policy_advisor", "workflow_specialist"],
+        )
+
+    @patch("apps.after_sales.tools.search_after_sales_knowledge")
+    @patch("apps.after_sales.agent_service.get_openai_client")
+    def test_no_knowledge_match_stops_the_model_and_escalates_to_human(
+        self, mock_get_client, mock_search
+    ):
+        mock_search.return_value = KnowledgeSearchResult(
+            matches=[],
+            requires_human_escalation=True,
+            message="未检索到相似度足够的售后知识，必须转人工处理。",
+        )
+        fake_client = FakeOpenAIClient(
+            [function_call_response("search_after_sales_knowledge", '{"question":"特殊问题"}')]
+        )
+        mock_get_client.return_value = fake_client
+
+        response = self.client.post(
+            "/api/v1/after-sales/conversations/", {"message": "一个很特殊的问题"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertIn("不会猜测规则", response.data["assistant_message"])
+        self.assertEqual(len(fake_client.responses.calls), 1)
+        self.assertEqual(AfterSalesCase.objects.count(), 1)
+        after_sales_case = AfterSalesCase.objects.get()
+        self.assertEqual(after_sales_case.case_type, AfterSalesCase.CaseType.HUMAN_SERVICE)
+        self.assertEqual(after_sales_case.status, AfterSalesCase.Status.PENDING_REVIEW)
+        self.assertEqual(
+            ToolExecution.objects.filter(tool_name="create_after_sales_case").count(), 1
+        )
 
     def test_conversation_history_is_private_to_its_owner(self):
         conversation = AgentConversation.objects.create(user=self.user)

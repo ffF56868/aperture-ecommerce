@@ -1,7 +1,9 @@
 from decimal import Decimal
 
 from django.test import TestCase, override_settings
+from unittest.mock import patch
 
+from apps.after_sales.knowledge import KnowledgeSearchResult
 from apps.after_sales.models import AfterSalesCase, AgentConversation, ConfirmationRequest, ToolExecution
 from apps.after_sales.openai_client import OpenAIConfigurationError, get_openai_client
 from apps.after_sales.permissions import ToolPermissionLevel
@@ -72,6 +74,7 @@ class AfterSalesToolTests(TestCase):
                 "list_my_orders",
                 "get_my_order_detail",
                 "list_after_sales_policies",
+                "search_after_sales_knowledge",
                 "list_my_after_sales_cases",
                 "prepare_after_sales_confirmation",
                 "create_after_sales_case",
@@ -99,6 +102,10 @@ class AfterSalesToolTests(TestCase):
             permissions["list_my_orders"]["permission_level"], ToolPermissionLevel.READ_ONLY
         )
         self.assertEqual(
+            permissions["search_after_sales_knowledge"]["permission_level"],
+            ToolPermissionLevel.READ_ONLY,
+        )
+        self.assertEqual(
             permissions["prepare_after_sales_confirmation"]["permission_level"],
             ToolPermissionLevel.CONFIRMATION_REQUIRED,
         )
@@ -114,6 +121,31 @@ class AfterSalesToolTests(TestCase):
         self.assertEqual([order["id"] for order in result["data"]["orders"]], [str(self.order.id)])
         execution = ToolExecution.objects.get()
         self.assertEqual(execution.status, ToolExecution.Status.SUCCEEDED)
+
+    @patch("apps.after_sales.tools.search_after_sales_knowledge")
+    def test_knowledge_search_is_read_only_and_returns_trusted_sources(self, mock_search):
+        mock_search.return_value = KnowledgeSearchResult(
+            matches=[
+                {
+                    "title": "服装尺码选择建议",
+                    "source_label": "商品咨询：服装尺码选择建议",
+                    "category": "商品咨询",
+                    "excerpt": "尺码以商品详情页为准。",
+                    "similarity": 0.91,
+                }
+            ],
+            requires_human_escalation=False,
+            message="已检索到可信售后知识，可据此回答并引用来源。",
+        )
+
+        result = execute_tool(self.context, "search_after_sales_knowledge", {"question": "尺码怎么选"})
+
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["data"]["requires_human_escalation"])
+        self.assertEqual(result["data"]["matches"][0]["source_label"], "商品咨询：服装尺码选择建议")
+        execution = ToolExecution.objects.get()
+        self.assertEqual(execution.action_kind, ToolExecution.ActionKind.READ)
+        self.assertEqual(execution.agent_role, "policy_advisor")
 
     def test_other_users_order_is_not_disclosed(self):
         result = execute_tool(

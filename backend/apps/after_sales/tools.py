@@ -8,6 +8,7 @@ from rest_framework import serializers
 
 from apps.cart_orders.models import Order, Payment
 
+from .knowledge import KnowledgeBaseError, search_after_sales_knowledge
 from .models import AgentConversation, ToolExecution
 from .permissions import (
     ALL_TOOL_PERMISSION_LEVELS,
@@ -73,6 +74,10 @@ class CreateAfterSalesCaseArgumentsSerializer(StrictToolArgumentsSerializer):
     reason = serializers.CharField(min_length=2, max_length=500, trim_whitespace=True)
     # Strict OpenAI schemas require every property; human-service calls pass null.
     order_id = serializers.UUIDField(allow_null=True)
+
+
+class KnowledgeSearchArgumentsSerializer(StrictToolArgumentsSerializer):
+    question = serializers.CharField(min_length=2, max_length=500, trim_whitespace=True)
 
 
 @dataclass(frozen=True)
@@ -188,6 +193,20 @@ CREATE_CASE_SCHEMA = {
     "additionalProperties": False,
 }
 
+KNOWLEDGE_SEARCH_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "question": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 500,
+            "description": "需要查询的售后知识问题，不应包含订单号、手机号等个人信息。",
+        }
+    },
+    "required": ["question"],
+    "additionalProperties": False,
+}
+
 
 def _serialize_order(order: Order) -> dict[str, Any]:
     try:
@@ -299,6 +318,22 @@ def _list_my_after_sales_cases(context: ToolContext, arguments: dict[str, Any]) 
     return {"cases": [serialize_after_sales_case(item) for item in list_recent_cases(user=context.user)]}
 
 
+def _search_after_sales_knowledge(
+    context: ToolContext, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    """Retrieve only trusted, static support knowledge; it never reads customer data."""
+
+    try:
+        result = search_after_sales_knowledge(arguments["question"])
+    except KnowledgeBaseError as exc:
+        raise ToolError("KNOWLEDGE_BASE_UNAVAILABLE", "售后知识库暂时不可用，请转人工处理。") from exc
+    return {
+        "matches": result.matches,
+        "requires_human_escalation": result.requires_human_escalation,
+        "message": result.message,
+    }
+
+
 REGISTERED_TOOLS = (
     RegisteredTool(
         name="list_my_orders",
@@ -329,6 +364,20 @@ REGISTERED_TOOLS = (
         agent_role="policy_advisor",
         permission_level=ToolPermissionLevel.READ_ONLY,
         handler=_list_after_sales_policies,
+    ),
+    RegisteredTool(
+        name="search_after_sales_knowledge",
+        description=(
+            "检索经审核的售后知识库，用于尺码、面料、洗护、物流说明和非实时规则问答。"
+            "绝不能用于查询订单、支付、退款、发货或其他用户信息。若返回 requires_human_escalation=true，"
+            "不得猜测规则，必须转人工。"
+        ),
+        parameters=KNOWLEDGE_SEARCH_SCHEMA,
+        arguments_serializer=KnowledgeSearchArgumentsSerializer,
+        action_kind=ToolExecution.ActionKind.READ,
+        agent_role="policy_advisor",
+        permission_level=ToolPermissionLevel.READ_ONLY,
+        handler=_search_after_sales_knowledge,
     ),
     RegisteredTool(
         name="list_my_after_sales_cases",

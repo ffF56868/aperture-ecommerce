@@ -6,6 +6,8 @@ from .models import (
     AgentMessage,
     ConfirmationRequest,
     CustomerMemory,
+    KnowledgeChunk,
+    KnowledgeDocument,
     ToolExecution,
 )
 
@@ -34,6 +36,15 @@ class ToolExecutionInline(admin.TabularInline):
     )
     readonly_fields = fields
     ordering = ("-created_at",)
+
+
+class KnowledgeChunkInline(admin.TabularInline):
+    model = KnowledgeChunk
+    extra = 0
+    can_delete = False
+    fields = ("sequence", "content", "content_hash", "created_at")
+    readonly_fields = fields
+    ordering = ("sequence",)
 
 
 @admin.register(AfterSalesCase)
@@ -96,6 +107,16 @@ class CustomerMemoryAdmin(admin.ModelAdmin):
     search_fields = ("user__username", "key")
     autocomplete_fields = ("user", "source_conversation")
     readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(KnowledgeDocument)
+class KnowledgeDocumentAdmin(admin.ModelAdmin):
+    list_display = ("title", "category", "source_label", "is_published", "updated_at")
+    list_filter = ("category", "is_published")
+    search_fields = ("title", "source_label", "content")
+    prepopulated_fields = {"slug": ("title",)}
+    readonly_fields = ("id", "created_at", "updated_at")
+    inlines = (KnowledgeChunkInline,)
 
 
 @admin.register(ToolExecution)

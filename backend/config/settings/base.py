@@ -253,6 +253,11 @@ OPENAI_MODEL = config("OPENAI_MODEL", default="gpt-4.1-mini")
 OPENAI_REQUEST_TIMEOUT_SECONDS = config(
     "OPENAI_REQUEST_TIMEOUT_SECONDS", default=30, cast=int
 )
+OPENAI_EMBEDDING_MODEL = config("OPENAI_EMBEDDING_MODEL", default="text-embedding-3-small")
+OPENAI_EMBEDDING_DIMENSIONS = config("OPENAI_EMBEDDING_DIMENSIONS", default=1536, cast=int)
+AFTER_SALES_RAG_MAX_COSINE_DISTANCE = config(
+    "AFTER_SALES_RAG_MAX_COSINE_DISTANCE", default=0.55, cast=float
+)
 
 # ---------------------------------------------------------------------------
 # Logging

@@ -24,7 +24,7 @@ HTTP, with its own guest-cart state that merges into the backend cart on login.
 
 | Layer | Choices |
 |---|---|
-| Backend | Python 3.13, Django 5, DRF, Celery + Redis, PostgreSQL, MinIO (S3-compatible), drf-spectacular, django-filter |
+| Backend | Python 3.13, Django 5, DRF, Celery + Redis, PostgreSQL + pgvector, MinIO (S3-compatible), drf-spectacular, django-filter |
 | Backend tooling | pytest-django, factory-boy pattern fixtures, Ruff, Black, isort |
 | Frontend | React 19, Vite, TypeScript (strict), Tailwind CSS, Framer Motion, React Router v7, TanStack Query v5, Zustand, Axios |
 | Frontend tooling | Vitest, React Testing Library, ESLint (flat config), Prettier |
@@ -100,6 +100,26 @@ Create an admin user once the backend container is up:
 ```bash
 docker compose exec backend python manage.py createsuperuser
 ```
+
+### 售后 Agent 知识库（RAG）
+
+售后 Agent 对尺码、面料、洗护和非实时规则使用可引用的中文知识库；订单、退款和发货仍使用受控业务工具。配置 `OPENAI_API_KEY` 后初始化向量：
+
+```bash
+docker compose exec backend python manage.py seed_after_sales_knowledge
+```
+
+详细的职责边界、维护和验收步骤见 [售后 Agent 知识库说明](docs/after-sales-rag.md)。
+
+### 售后 Agent Eval
+
+项目内置 20 条确定性回放评测，覆盖订单归属、人工确认、RAG 引用、提示注入、危险工具、schema 约束、连续失败和工具循环上限。运行评测不会消耗 OpenAI 额度，临时数据会在事务结束时自动回滚：
+
+```bash
+docker compose exec backend python manage.py run_after_sales_agent_eval
+```
+
+详细的评测设计、指标与报告说明见 [售后 Agent Eval 说明](docs/after-sales-agent-eval.md)。
 
 ## Manual (non-Docker) setup
 
