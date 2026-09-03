@@ -410,6 +410,117 @@ class KnowledgeChunk(UUIDPrimaryKeyMixin, TimeStampedMixin):
         return f"{self.document.title} #{self.sequence}"
 
 
+class AgentRun(UUIDPrimaryKeyMixin, TimeStampedMixin):
+    """One complete customer-facing Agent turn, kept separate from chat history."""
+
+    class Status(models.TextChoices):
+        RUNNING = "RUNNING", "执行中"
+        SUCCEEDED = "SUCCEEDED", "已完成"
+        AWAITING_CONFIRMATION = "AWAITING_CONFIRMATION", "等待确认"
+        ESCALATED = "ESCALATED", "已转人工"
+        BLOCKED = "BLOCKED", "已拦截"
+        FAILED = "FAILED", "失败"
+
+    conversation = models.ForeignKey(
+        AgentConversation,
+        verbose_name="会话",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="agent_runs",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="用户",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="agent_runs",
+    )
+    confirmation_request = models.ForeignKey(
+        ConfirmationRequest,
+        verbose_name="确认请求",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="agent_runs",
+    )
+    model_name = models.CharField("模型", max_length=120, blank=True)
+    current_intent = models.CharField("识别意图", max_length=64, blank=True)
+    input_message = models.TextField("用户输入", blank=True)
+    assistant_message = models.TextField("助手回复", blank=True)
+    agent_roles = models.JSONField("协作角色", default=list, blank=True)
+    status = models.CharField("运行状态", max_length=32, choices=Status.choices, default=Status.RUNNING)
+    failure_code = models.CharField("失败代码", max_length=100, blank=True)
+    failure_message = models.CharField("失败说明", max_length=255, blank=True)
+    response_id = models.CharField("模型响应 ID", max_length=120, blank=True)
+    tool_rounds = models.PositiveSmallIntegerField("工具轮数", default=0)
+    tool_call_count = models.PositiveSmallIntegerField("工具调用次数", default=0)
+    successful_tool_count = models.PositiveSmallIntegerField("成功工具数", default=0)
+    failed_tool_count = models.PositiveSmallIntegerField("失败工具数", default=0)
+    denied_tool_count = models.PositiveSmallIntegerField("拒绝工具数", default=0)
+    input_tokens = models.PositiveIntegerField("输入 Token", null=True, blank=True)
+    output_tokens = models.PositiveIntegerField("输出 Token", null=True, blank=True)
+    total_tokens = models.PositiveIntegerField("总 Token", null=True, blank=True)
+    started_at = models.DateTimeField("开始时间", default=timezone.now)
+    finished_at = models.DateTimeField("结束时间", null=True, blank=True)
+    duration_ms = models.PositiveIntegerField("总耗时（毫秒）", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Agent 运行记录"
+        verbose_name_plural = "Agent 运行记录"
+        ordering = ("-started_at",)
+        indexes = [
+            models.Index(fields=["status", "started_at"]),
+            models.Index(fields=["user", "started_at"]),
+            models.Index(fields=["current_intent", "started_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.model_name or 'Agent'} - {self.get_status_display()} - {str(self.id)[:8]}"
+
+
+class AgentRunEvent(UUIDPrimaryKeyMixin, TimeStampedMixin):
+    """Safe, structured milestones inside one Agent run."""
+
+    class EventType(models.TextChoices):
+        MODEL_REQUEST = "MODEL_REQUEST", "模型请求"
+        TOOL_EXECUTION = "TOOL_EXECUTION", "工具执行"
+        HUMAN_ACTION = "HUMAN_ACTION", "人工操作"
+        RUN_COMPLETED = "RUN_COMPLETED", "运行结束"
+
+    class Status(models.TextChoices):
+        SUCCEEDED = "SUCCEEDED", "成功"
+        FAILED = "FAILED", "失败"
+        DENIED = "DENIED", "已拒绝"
+        INFO = "INFO", "信息"
+
+    run = models.ForeignKey(
+        AgentRun,
+        verbose_name="Agent 运行记录",
+        on_delete=models.CASCADE,
+        related_name="events",
+    )
+    event_type = models.CharField("事件类型", max_length=32, choices=EventType.choices)
+    status = models.CharField("事件状态", max_length=16, choices=Status.choices)
+    sequence = models.PositiveSmallIntegerField("顺序")
+    name = models.CharField("事件名称", max_length=120)
+    detail = models.JSONField("事件详情", default=dict, blank=True)
+    duration_ms = models.PositiveIntegerField("耗时（毫秒）", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Agent 运行事件"
+        verbose_name_plural = "Agent 运行事件"
+        ordering = ("sequence", "created_at")
+        indexes = [
+            models.Index(fields=["run", "sequence"]),
+            models.Index(fields=["event_type", "created_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.run_id} - {self.name}"
+
+
 class ToolExecution(UUIDPrimaryKeyMixin, TimeStampedMixin):
     """Append-only audit data for every registered Agent tool invocation."""
 
@@ -431,6 +542,14 @@ class ToolExecution(UUIDPrimaryKeyMixin, TimeStampedMixin):
     conversation = models.ForeignKey(
         AgentConversation,
         verbose_name="会话",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="tool_executions",
+    )
+    run = models.ForeignKey(
+        AgentRun,
+        verbose_name="Agent 运行记录",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,

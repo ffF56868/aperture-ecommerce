@@ -4,6 +4,8 @@ from .models import (
     AfterSalesCase,
     AgentConversation,
     AgentMessage,
+    AgentRun,
+    AgentRunEvent,
     AfterSalesNotification,
     ConfirmationRequest,
     CustomerMemory,
@@ -37,6 +39,15 @@ class ToolExecutionInline(admin.TabularInline):
     )
     readonly_fields = fields
     ordering = ("-created_at",)
+
+
+class AgentRunEventInline(admin.TabularInline):
+    model = AgentRunEvent
+    extra = 0
+    can_delete = False
+    fields = ("sequence", "event_type", "status", "name", "duration_ms", "created_at")
+    readonly_fields = fields
+    ordering = ("sequence", "created_at")
 
 
 class KnowledgeChunkInline(admin.TabularInline):
@@ -124,6 +135,7 @@ class KnowledgeDocumentAdmin(admin.ModelAdmin):
 class ToolExecutionAdmin(admin.ModelAdmin):
     list_display = (
         "agent_role",
+        "run",
         "tool_name",
         "action_kind",
         "status",
@@ -134,10 +146,11 @@ class ToolExecutionAdmin(admin.ModelAdmin):
     )
     list_filter = ("action_kind", "status", "initiated_by", "tool_name")
     search_fields = ("tool_name", "user__username", "error_code")
-    autocomplete_fields = ("conversation", "user", "after_sales_case", "confirmation_request")
+    autocomplete_fields = ("conversation", "run", "user", "after_sales_case", "confirmation_request")
     readonly_fields = (
         "id",
         "conversation",
+        "run",
         "user",
         "after_sales_case",
         "confirmation_request",
@@ -149,6 +162,107 @@ class ToolExecutionAdmin(admin.ModelAdmin):
         "sanitized_arguments",
         "result",
         "error_code",
+        "duration_ms",
+        "created_at",
+        "updated_at",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(AgentRun)
+class AgentRunAdmin(admin.ModelAdmin):
+    list_display = (
+        "started_at",
+        "status",
+        "model_name",
+        "current_intent",
+        "user",
+        "tool_call_count",
+        "duration_ms",
+        "total_tokens",
+    )
+    list_filter = ("status", "current_intent", "model_name")
+    search_fields = ("id", "input_message", "user__username", "response_id")
+    autocomplete_fields = ("conversation", "user", "confirmation_request")
+    readonly_fields = (
+        "id",
+        "conversation",
+        "user",
+        "confirmation_request",
+        "model_name",
+        "current_intent",
+        "input_message",
+        "assistant_message",
+        "agent_roles",
+        "status",
+        "failure_code",
+        "failure_message",
+        "response_id",
+        "tool_rounds",
+        "tool_call_count",
+        "successful_tool_count",
+        "failed_tool_count",
+        "denied_tool_count",
+        "input_tokens",
+        "output_tokens",
+        "total_tokens",
+        "started_at",
+        "finished_at",
+        "duration_ms",
+        "created_at",
+        "updated_at",
+    )
+    fieldsets = (
+        ("运行概览", {"fields": ("id", "status", "model_name", "current_intent", "response_id")} ),
+        ("用户输入与回复", {"fields": ("input_message", "assistant_message")} ),
+        ("协作与关联", {"fields": ("user", "conversation", "confirmation_request", "agent_roles")} ),
+        (
+            "指标",
+            {
+                "fields": (
+                    "tool_rounds",
+                    "tool_call_count",
+                    "successful_tool_count",
+                    "failed_tool_count",
+                    "denied_tool_count",
+                    "input_tokens",
+                    "output_tokens",
+                    "total_tokens",
+                    "duration_ms",
+                )
+            },
+        ),
+        ("失败信息", {"fields": ("failure_code", "failure_message")} ),
+        ("时间", {"fields": ("started_at", "finished_at", "created_at", "updated_at")} ),
+    )
+    inlines = (AgentRunEventInline, ToolExecutionInline)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(AgentRunEvent)
+class AgentRunEventAdmin(admin.ModelAdmin):
+    list_display = ("created_at", "run", "sequence", "event_type", "status", "name", "duration_ms")
+    list_filter = ("event_type", "status")
+    search_fields = ("run__id", "name")
+    autocomplete_fields = ("run",)
+    readonly_fields = (
+        "id",
+        "run",
+        "event_type",
+        "status",
+        "sequence",
+        "name",
+        "detail",
         "duration_ms",
         "created_at",
         "updated_at",

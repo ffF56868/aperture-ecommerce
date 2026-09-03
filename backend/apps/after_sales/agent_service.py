@@ -2,14 +2,16 @@
 
 import json
 import logging
+from collections.abc import Mapping
+from time import perf_counter
 import uuid
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 
 from django.utils import timezone
 
 from .collaboration import build_collaboration_plan
-from .models import AgentConversation, AgentMessage, CustomerMemory, ToolExecution
+from .models import AgentConversation, AgentMessage, AgentRun, AgentRunEvent, CustomerMemory, ToolExecution
 from .openai_client import get_openai_client, get_openai_model
 from .permissions import allowed_permission_levels_for_conversation
 from .safety import is_security_rejection
@@ -180,6 +182,194 @@ def _call_model(client: Any, **kwargs: Any) -> Any:
         raise AfterSalesAgentUnavailableError("智能售后服务暂时不可用，请稍后重试。") from exc
 
 
+def _response_usage(response: Any) -> dict[str, int]:
+    """Read provider usage without assuming a particular SDK response class."""
+
+    usage = _item_value(response, "usage", None)
+    if usage is None:
+        return {}
+    values = {}
+    for key in ("input_tokens", "output_tokens", "total_tokens"):
+        value = _item_value(usage, key, None)
+        if isinstance(value, int) and value >= 0:
+            values[key] = value
+    return values
+
+
+def _record_model_request(
+    *, run: AgentRun, response: Any, sequence: int, tool_call_count: int
+) -> None:
+    usage = _response_usage(response)
+    update_fields = []
+    for field in ("input_tokens", "output_tokens", "total_tokens"):
+        if field in usage:
+            current = getattr(run, field) or 0
+            setattr(run, field, current + usage[field])
+            update_fields.append(field)
+    run.response_id = str(_item_value(response, "id", ""))[:120]
+    update_fields.append("response_id")
+    if update_fields:
+        run.save(update_fields=[*update_fields, "updated_at"])
+    AgentRunEvent.objects.create(
+        run=run,
+        event_type=AgentRunEvent.EventType.MODEL_REQUEST,
+        status=AgentRunEvent.Status.SUCCEEDED,
+        sequence=sequence,
+        name="模型请求完成",
+        detail={
+            "response_id": run.response_id,
+            "tool_call_count": tool_call_count,
+            "usage": usage,
+        },
+    )
+
+
+def _record_model_failure(*, run: AgentRun, sequence: int, error_code: str) -> None:
+    AgentRunEvent.objects.create(
+        run=run,
+        event_type=AgentRunEvent.EventType.MODEL_REQUEST,
+        status=AgentRunEvent.Status.FAILED,
+        sequence=sequence,
+        name="模型请求失败",
+        detail={"error_code": error_code[:100]},
+    )
+
+
+def _record_tool_event(*, run: AgentRun, tool_name: str, result: dict[str, Any]) -> None:
+    error = result.get("error")
+    error_code = error.get("code", "") if isinstance(error, Mapping) else ""
+    if result.get("ok"):
+        status = AgentRunEvent.Status.SUCCEEDED
+    elif error_code in {"DANGEROUS_TOOL_CALL_BLOCKED", "TOOL_NOT_ALLOWED", "PERMISSION_DENIED"}:
+        status = AgentRunEvent.Status.DENIED
+    else:
+        status = AgentRunEvent.Status.FAILED
+    AgentRunEvent.objects.create(
+        run=run,
+        event_type=AgentRunEvent.EventType.TOOL_EXECUTION,
+        status=status,
+        sequence=run.events.count() + 1,
+        name=f"工具：{tool_name or 'unknown'}",
+        detail={
+            "tool_name": (tool_name or "unknown")[:100],
+            "ok": bool(result.get("ok")),
+            "error_code": error_code[:100],
+        },
+    )
+
+
+def _sync_run_metrics(run: AgentRun) -> None:
+    executions = ToolExecution.objects.filter(run=run)
+    run.tool_call_count = executions.count()
+    run.successful_tool_count = executions.filter(status=ToolExecution.Status.SUCCEEDED).count()
+    run.failed_tool_count = executions.filter(status=ToolExecution.Status.FAILED).count()
+    run.denied_tool_count = executions.filter(status=ToolExecution.Status.DENIED).count()
+    if run.total_tokens is None and run.input_tokens is not None and run.output_tokens is not None:
+        run.total_tokens = run.input_tokens + run.output_tokens
+    run.save(
+        update_fields=[
+            "tool_call_count",
+            "successful_tool_count",
+            "failed_tool_count",
+            "denied_tool_count",
+            "total_tokens",
+            "updated_at",
+        ]
+    )
+
+
+def _finish_agent_run(
+    *,
+    run: AgentRun,
+    status: str,
+    started_at: float,
+    assistant_message: str = "",
+    failure_code: str = "",
+    failure_message: str = "",
+) -> None:
+    _sync_run_metrics(run)
+    run.status = status
+    run.assistant_message = assistant_message[:MAX_ASSISTANT_MESSAGE_CHARS]
+    run.failure_code = failure_code[:100]
+    run.failure_message = failure_message[:255]
+    run.finished_at = timezone.now()
+    run.duration_ms = int((perf_counter() - started_at) * 1000)
+    run.save(
+        update_fields=[
+            "status",
+            "assistant_message",
+            "failure_code",
+            "failure_message",
+            "finished_at",
+            "duration_ms",
+            "updated_at",
+        ]
+    )
+    AgentRunEvent.objects.create(
+        run=run,
+        event_type=AgentRunEvent.EventType.RUN_COMPLETED,
+        status=(
+            AgentRunEvent.Status.SUCCEEDED
+            if status in {
+                AgentRun.Status.SUCCEEDED,
+                AgentRun.Status.AWAITING_CONFIRMATION,
+                AgentRun.Status.ESCALATED,
+            }
+            else AgentRunEvent.Status.DENIED
+            if status == AgentRun.Status.BLOCKED
+            else AgentRunEvent.Status.FAILED
+        ),
+        sequence=run.events.count() + 1,
+        name="Agent 运行结束",
+        detail={
+            "status": status,
+            "tool_call_count": run.tool_call_count,
+            "duration_ms": run.duration_ms,
+        },
+        duration_ms=run.duration_ms,
+    )
+
+
+def mark_active_agent_run_failed(
+    *, conversation: AgentConversation, error_code: str = "AGENT_RUN_FAILED"
+) -> None:
+    """Close a run left open by an unexpected exception outside the normal loop."""
+
+    run = (
+        AgentRun.objects.filter(conversation=conversation, status=AgentRun.Status.RUNNING)
+        .order_by("-started_at")
+        .first()
+    )
+    if run is None:
+        return
+    _sync_run_metrics(run)
+    finished_at = timezone.now()
+    run.status = AgentRun.Status.FAILED
+    run.failure_code = error_code[:100]
+    run.failure_message = "Agent 执行过程中发生未预期异常。"
+    run.finished_at = finished_at
+    run.duration_ms = max(0, int((finished_at - run.started_at).total_seconds() * 1000))
+    run.save(
+        update_fields=[
+            "status",
+            "failure_code",
+            "failure_message",
+            "finished_at",
+            "duration_ms",
+            "updated_at",
+        ]
+    )
+    AgentRunEvent.objects.create(
+        run=run,
+        event_type=AgentRunEvent.EventType.RUN_COMPLETED,
+        status=AgentRunEvent.Status.FAILED,
+        sequence=run.events.count() + 1,
+        name="Agent 运行异常结束",
+        detail={"status": run.status, "error_code": run.failure_code},
+        duration_ms=run.duration_ms,
+    )
+
+
 def _update_selected_order(conversation: AgentConversation, tool_name: str, result: dict[str, Any]) -> None:
     if not result.get("ok"):
         return
@@ -257,8 +447,31 @@ def _pending_confirmation_message(result: dict[str, Any] | None) -> str:
 def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) -> AgentRunResult:
     """Persist one user turn and complete up to three allowlisted tool rounds."""
 
-    client = get_openai_client()
     collaboration_plan = build_collaboration_plan(message)
+    run_started_at = perf_counter()
+    run = AgentRun.objects.create(
+        conversation=conversation,
+        user=user,
+        model_name=get_openai_model(),
+        current_intent=_detect_intent(message),
+        input_message=message[:2000],
+        agent_roles=collaboration_plan.as_payload(),
+        status=AgentRun.Status.RUNNING,
+        started_at=timezone.now(),
+    )
+    try:
+        client = get_openai_client()
+    except Exception as exc:
+        _record_model_failure(run=run, sequence=1, error_code=exc.__class__.__name__)
+        _finish_agent_run(
+            run=run,
+            status=AgentRun.Status.FAILED,
+            started_at=run_started_at,
+            failure_code=exc.__class__.__name__,
+            failure_message="模型服务不可用。",
+        )
+        raise
+
     agent_instructions = f"{AGENT_INSTRUCTIONS}{collaboration_plan.as_instruction()}"
     allowed_permission_levels = allowed_permission_levels_for_conversation(conversation)
     tool_definitions = get_openai_tool_definitions(
@@ -271,15 +484,27 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
         content=message,
     )
 
-    response = _call_model(
-        client,
-        model=get_openai_model(),
-        instructions=agent_instructions,
-        input=[{"role": "user", "content": _build_user_input(conversation)}],
-        tools=tool_definitions,
-        tool_choice="auto",
-        parallel_tool_calls=False,
-    )
+    try:
+        response = _call_model(
+            client,
+            model=run.model_name,
+            instructions=agent_instructions,
+            input=[{"role": "user", "content": _build_user_input(conversation)}],
+            tools=tool_definitions,
+            tool_choice="auto",
+            parallel_tool_calls=False,
+        )
+    except Exception as exc:
+        _record_model_failure(run=run, sequence=1, error_code=exc.__class__.__name__)
+        _finish_agent_run(
+            run=run,
+            status=AgentRun.Status.FAILED,
+            started_at=run_started_at,
+            failure_code=exc.__class__.__name__,
+            failure_message="模型服务请求失败。",
+        )
+        raise
+    _record_model_request(run=run, response=response, sequence=1, tool_call_count=0)
 
     tool_calls_for_client: list[dict[str, Any]] = []
     failed_tool_name, consecutive_tool_failures = _tool_failure_tracking(conversation)
@@ -288,12 +513,15 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
     escalation_case = None
     knowledge_source_labels: list[str] = []
     confirmation_result: dict[str, Any] | None = None
+    blocked_run = False
 
     for round_index in range(MAX_TOOL_ROUNDS):
         function_calls = _function_calls(response)
         if not function_calls:
             final_message = _extract_output_text(response)
             break
+        run.tool_rounds = max(run.tool_rounds, round_index + 1)
+        run.save(update_fields=["tool_rounds", "updated_at"])
 
         outputs = []
         for function_call in function_calls:
@@ -305,6 +533,7 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
                 ToolContext(
                     user=user,
                     conversation=conversation,
+                    run=run,
                     allowed_action_kinds=frozenset(
                         {ToolExecution.ActionKind.READ, ToolExecution.ActionKind.WRITE}
                     ),
@@ -315,6 +544,7 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
                 arguments,
             )
             security_rejection = is_security_rejection(result)
+            _record_tool_event(run=run, tool_name=tool_name, result=result)
             if security_rejection:
                 failed_tool_name = ""
                 consecutive_tool_failures = 0
@@ -334,6 +564,10 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
                         knowledge_source_labels.append(source_label)
             if tool_name == "prepare_after_sales_confirmation" and result.get("ok"):
                 confirmation_result = result
+                confirmation_id = result.get("data", {}).get("confirmation", {}).get("id")
+                if confirmation_id:
+                    run.confirmation_request_id = confirmation_id
+                    run.save(update_fields=["confirmation_request", "updated_at"])
             AgentMessage.objects.create(
                 conversation=conversation,
                 role=AgentMessage.Role.TOOL,
@@ -353,6 +587,7 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
             )
 
             if security_rejection:
+                blocked_run = True
                 final_message = "我只能处理当前账号的售后事项，已拦截不属于售后范围的系统操作请求。"
                 break
 
@@ -364,6 +599,7 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
                     ToolContext(
                         user=user,
                         conversation=conversation,
+                        run=run,
                         allowed_action_kinds=frozenset(
                             {ToolExecution.ActionKind.READ, ToolExecution.ActionKind.WRITE}
                         ),
@@ -376,6 +612,9 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
                         "reason": escalation_reason,
                         "order_id": None,
                     },
+                )
+                _record_tool_event(
+                    run=run, tool_name="create_after_sales_case", result=escalation_result
                 )
                 tool_calls_for_client.append(
                     {
@@ -406,6 +645,7 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
                         tool_name=tracked_tool_name,
                         error_code=_error_code(result),
                         failure_count=consecutive_tool_failures,
+                        run=run,
                     )
                 except Exception:
                     logger.exception("Unable to create system exception after repeated tool failures")
@@ -415,6 +655,11 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
                         f"我在核验时连续遇到异常，已创建人工工单 "
                         f"{escalation_case.case_number}，请等待客服处理。"
                     )
+                _record_tool_event(
+                    run=run,
+                    tool_name="escalate_system_exception",
+                    result={"ok": True, "data": {"case_number": escalation_case.case_number}},
+                )
                 break
 
         if escalation_case is not None or final_message:
@@ -428,15 +673,35 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
             )
             break
 
-        response = _call_model(
-            client,
-            model=get_openai_model(),
-            instructions=agent_instructions,
-            previous_response_id=_item_value(response, "id"),
-            input=outputs,
-            tools=tool_definitions,
-            tool_choice="auto",
-            parallel_tool_calls=False,
+        try:
+            response = _call_model(
+                client,
+                model=run.model_name,
+                instructions=agent_instructions,
+                previous_response_id=_item_value(response, "id"),
+                input=outputs,
+                tools=tool_definitions,
+                tool_choice="auto",
+                parallel_tool_calls=False,
+            )
+        except Exception as exc:
+            _record_model_failure(
+                run=run, sequence=run.events.count() + 1, error_code=exc.__class__.__name__
+            )
+            _finish_agent_run(
+                run=run,
+                status=AgentRun.Status.FAILED,
+                started_at=run_started_at,
+                failure_code=exc.__class__.__name__,
+                failure_message="模型服务请求失败。",
+            )
+            raise
+        _sync_run_metrics(run)
+        _record_model_request(
+            run=run,
+            response=response,
+            sequence=run.events.count() + 1,
+            tool_call_count=run.tool_call_count,
         )
 
     if not final_message:
@@ -480,6 +745,22 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
             "context",
             "updated_at",
         ]
+    )
+
+    run_status = (
+        AgentRun.Status.BLOCKED
+        if blocked_run
+        else AgentRun.Status.AWAITING_CONFIRMATION
+        if conversation.state == AgentConversation.State.AWAITING_CONFIRMATION
+        else AgentRun.Status.ESCALATED
+        if conversation.state == AgentConversation.State.ESCALATED
+        else AgentRun.Status.SUCCEEDED
+    )
+    _finish_agent_run(
+        run=run,
+        status=run_status,
+        started_at=run_started_at,
+        assistant_message=final_message,
     )
 
     return AgentRunResult(assistant_message=final_message, tool_calls=tool_calls_for_client)

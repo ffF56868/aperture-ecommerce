@@ -9,7 +9,7 @@ from rest_framework import serializers
 from apps.cart_orders.models import Order, Payment
 
 from .knowledge import KnowledgeBaseError, search_after_sales_knowledge
-from .models import AgentConversation, ToolExecution
+from .models import AgentConversation, AgentRun, ToolExecution
 from .permissions import (
     ALL_TOOL_PERMISSION_LEVELS,
     ToolPermissionLevel,
@@ -86,6 +86,7 @@ class ToolContext:
 
     user: Any
     conversation: AgentConversation | None = None
+    run: AgentRun | None = None
     allowed_action_kinds: frozenset[str] = field(
         default_factory=lambda: frozenset({ToolExecution.ActionKind.READ})
     )
@@ -501,6 +502,7 @@ def execute_tool(
         result = _error(tool_name_safety.code, tool_name_safety.message)
         ToolExecution.objects.create(
             conversation=context.conversation,
+            run=context.run,
             user=context.user,
             agent_role="coordinator",
             tool_name=tool_name[:100] or "unknown",
@@ -522,6 +524,7 @@ def execute_tool(
         )
         ToolExecution.objects.create(
             conversation=context.conversation,
+            run=context.run,
             user=context.user,
             agent_role="coordinator",
             tool_name=tool_name[:100] or "unknown",
@@ -537,6 +540,7 @@ def execute_tool(
 
     execution = ToolExecution.objects.create(
         conversation=context.conversation,
+        run=context.run,
         user=context.user,
         agent_role=tool.agent_role,
         tool_name=tool.name,

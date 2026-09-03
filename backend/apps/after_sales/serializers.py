@@ -200,3 +200,80 @@ class StaffOrderSerializer(serializers.Serializer):
     items = StaffOrderItemSerializer(many=True)
     created_at = serializers.DateTimeField()
     updated_at = serializers.DateTimeField()
+
+
+class AgentRunEventSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    event_type = serializers.CharField()
+    status = serializers.CharField()
+    sequence = serializers.IntegerField()
+    name = serializers.CharField()
+    detail = serializers.DictField()
+    duration_ms = serializers.IntegerField(allow_null=True)
+    created_at = serializers.DateTimeField()
+
+
+class AgentRunSummarySerializer(serializers.Serializer):
+    total_runs = serializers.IntegerField()
+    completed_runs = serializers.IntegerField()
+    failed_runs = serializers.IntegerField()
+    blocked_runs = serializers.IntegerField()
+    escalated_runs = serializers.IntegerField()
+    awaiting_confirmation_runs = serializers.IntegerField()
+    success_rate = serializers.FloatField()
+    average_duration_ms = serializers.IntegerField()
+    total_tool_calls = serializers.IntegerField()
+    failed_tool_calls = serializers.IntegerField()
+    denied_tool_calls = serializers.IntegerField()
+    total_tokens = serializers.IntegerField(allow_null=True)
+
+
+class AgentRunListItemSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    conversation_id = serializers.UUIDField(allow_null=True)
+    user = StaffCustomerSerializer(allow_null=True)
+    model_name = serializers.CharField()
+    current_intent = serializers.CharField()
+    input_preview = serializers.CharField()
+    status = serializers.CharField()
+    status_label = serializers.CharField()
+    tool_rounds = serializers.IntegerField()
+    tool_call_count = serializers.IntegerField()
+    successful_tool_count = serializers.IntegerField()
+    failed_tool_count = serializers.IntegerField()
+    denied_tool_count = serializers.IntegerField()
+    total_tokens = serializers.IntegerField(allow_null=True)
+    duration_ms = serializers.IntegerField(allow_null=True)
+    started_at = serializers.DateTimeField()
+    finished_at = serializers.DateTimeField(allow_null=True)
+
+
+class AgentRunListResponseSerializer(serializers.Serializer):
+    summary = AgentRunSummarySerializer()
+    runs = AgentRunListItemSerializer(many=True)
+
+
+class AgentRunToolExecutionSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    tool_name = serializers.CharField()
+    agent_role = serializers.CharField()
+    action_kind = serializers.CharField()
+    status = serializers.CharField()
+    initiated_by = serializers.CharField()
+    sanitized_arguments = serializers.DictField()
+    result = serializers.DictField()
+    error_code = serializers.CharField()
+    duration_ms = serializers.IntegerField(allow_null=True)
+    created_at = serializers.DateTimeField()
+
+
+class AgentRunDetailSerializer(AgentRunListItemSerializer):
+    input_message = serializers.CharField()
+    assistant_message = serializers.CharField()
+    agent_roles = serializers.ListField(child=serializers.DictField())
+    failure_code = serializers.CharField()
+    failure_message = serializers.CharField()
+    response_id = serializers.CharField()
+    confirmation_request_id = serializers.UUIDField(allow_null=True)
+    events = AgentRunEventSerializer(many=True)
+    tool_executions = AgentRunToolExecutionSerializer(many=True)

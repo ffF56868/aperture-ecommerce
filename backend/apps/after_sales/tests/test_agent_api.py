@@ -11,6 +11,8 @@ from apps.after_sales.models import (
     AgentMessage,
     ConfirmationRequest,
     ToolExecution,
+    AgentRun,
+    AgentRunEvent,
 )
 from apps.after_sales.knowledge import KnowledgeSearchResult
 from apps.after_sales.openai_client import OpenAIConfigurationError
@@ -124,6 +126,20 @@ class AfterSalesAgentAPITests(TestCase):
         )
         self.assertEqual(ToolExecution.objects.get().status, ToolExecution.Status.SUCCEEDED)
         self.assertEqual(ToolExecution.objects.get().agent_role, "order_analyst")
+        run = AgentRun.objects.get()
+        self.assertEqual(run.status, AgentRun.Status.SUCCEEDED)
+        self.assertEqual(run.tool_call_count, 1)
+        self.assertEqual(run.successful_tool_count, 1)
+        self.assertIsNotNone(run.finished_at)
+        self.assertEqual(
+            list(run.events.values_list("event_type", flat=True)),
+            [
+                AgentRunEvent.EventType.MODEL_REQUEST,
+                AgentRunEvent.EventType.TOOL_EXECUTION,
+                AgentRunEvent.EventType.MODEL_REQUEST,
+                AgentRunEvent.EventType.RUN_COMPLETED,
+            ],
+        )
 
         detail_response = self.client.get(
             f"/api/v1/after-sales/conversations/{response.data['conversation_id']}/"
@@ -314,6 +330,37 @@ class AfterSalesAgentAPITests(TestCase):
         self.assertEqual(len(fake_client.responses.calls), 3)
         self.assertEqual(AfterSalesCase.objects.count(), 0)
 
+    def test_regular_user_cannot_access_agent_observability(self):
+        response = self.client.get("/api/v1/after-sales/staff/agent-runs/")
+        self.assertEqual(response.status_code, 403)
+
+    def test_staff_can_query_agent_observability(self):
+        staff = User.objects.create_user(
+            username="agent_observability_staff",
+            phone_number="+8613800138010",
+            password="Demo123!",
+        )
+        staff.is_staff = True
+        staff.save(update_fields=["is_staff"])
+        run = AgentRun.objects.create(
+            user=self.user,
+            model_name="test-model",
+            current_intent="ORDER_QUERY",
+            input_message="帮我查询订单",
+            status=AgentRun.Status.SUCCEEDED,
+            duration_ms=42,
+        )
+        self.client.force_authenticate(staff)
+
+        list_response = self.client.get("/api/v1/after-sales/staff/agent-runs/")
+        detail_response = self.client.get(f"/api/v1/after-sales/staff/agent-runs/{run.id}/")
+
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(list_response.data["summary"]["total_runs"], 1)
+        self.assertEqual(str(list_response.data["runs"][0]["id"]), str(run.id))
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(detail_response.data["user"]["username"], self.user.username)
+
     @patch("apps.after_sales.agent_service.get_openai_client")
     def test_dangerous_model_tool_call_is_blocked_without_a_follow_up_model_request(
         self, mock_get_client
@@ -335,6 +382,9 @@ class AfterSalesAgentAPITests(TestCase):
         self.assertEqual(execution.error_code, "DANGEROUS_TOOL_CALL_BLOCKED")
         self.assertEqual(execution.sanitized_arguments, {"blocked": True, "argument_keys": ["sql"]})
         self.assertEqual(AfterSalesCase.objects.count(), 0)
+        run = AgentRun.objects.get()
+        self.assertEqual(run.status, AgentRun.Status.BLOCKED)
+        self.assertEqual(run.denied_tool_count, 1)
 
     @patch("apps.after_sales.agent_service.get_openai_client")
     def test_repeated_failure_of_the_same_tool_stops_and_escalates_to_human(self, mock_get_client):

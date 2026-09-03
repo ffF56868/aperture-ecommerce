@@ -290,3 +290,94 @@ export interface ConfirmationRejectionResponse {
   confirmation: AfterSalesConfirmation;
   message: string;
 }
+
+export type AgentRunStatus =
+  | "RUNNING"
+  | "SUCCEEDED"
+  | "AWAITING_CONFIRMATION"
+  | "ESCALATED"
+  | "BLOCKED"
+  | "FAILED";
+
+export interface AgentRunUser {
+  id: number;
+  username: string;
+  phone_number: string;
+}
+
+export interface AgentRunListItem {
+  id: string;
+  conversation_id: string | null;
+  user: AgentRunUser | null;
+  model_name: string;
+  current_intent: string;
+  input_preview: string;
+  status: AgentRunStatus;
+  status_label: string;
+  tool_rounds: number;
+  tool_call_count: number;
+  successful_tool_count: number;
+  failed_tool_count: number;
+  denied_tool_count: number;
+  total_tokens: number | null;
+  duration_ms: number | null;
+  started_at: string;
+  finished_at: string | null;
+}
+
+export interface AgentRunSummary {
+  total_runs: number;
+  completed_runs: number;
+  failed_runs: number;
+  blocked_runs: number;
+  escalated_runs: number;
+  awaiting_confirmation_runs: number;
+  success_rate: number;
+  average_duration_ms: number;
+  total_tool_calls: number;
+  failed_tool_calls: number;
+  denied_tool_calls: number;
+  total_tokens: number | null;
+}
+
+export interface AgentRunListResponse {
+  summary: AgentRunSummary;
+  runs: AgentRunListItem[];
+}
+
+export interface AgentRunEvent {
+  id: string;
+  event_type: string;
+  status: string;
+  sequence: number;
+  name: string;
+  detail: Record<string, unknown>;
+  duration_ms: number | null;
+  created_at: string;
+}
+
+export interface AgentRunToolExecution {
+  id: string;
+  tool_name: string;
+  agent_role: string;
+  action_kind: string;
+  status: string;
+  initiated_by: string;
+  sanitized_arguments: Record<string, unknown>;
+  result: Record<string, unknown>;
+  error_code: string;
+  duration_ms: number | null;
+  created_at: string;
+}
+
+export interface AgentRunDetail extends AgentRunListItem {
+  input_message: string;
+  assistant_message: string;
+  agent_roles: Array<Record<string, string>>;
+  failure_code: string;
+  failure_message: string;
+  response_id: string;
+  confirmation_request_id: string | null;
+  events: AgentRunEvent[];
+  tool_executions: AgentRunToolExecution[];
+}

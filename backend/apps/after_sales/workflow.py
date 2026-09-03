@@ -18,6 +18,7 @@ from .models import (
     AfterSalesNotification,
     AgentConversation,
     AgentMessage,
+    AgentRunEvent,
     ConfirmationRequest,
     ToolExecution,
 )
@@ -644,6 +645,7 @@ def create_system_exception_case(
     tool_name: str,
     error_code: str,
     failure_count: int,
+    run: Any | None = None,
 ) -> tuple[AfterSalesCase, bool]:
     """Escalate repeated tool failures once, without exposing internal details to customers."""
 
@@ -683,6 +685,7 @@ def create_system_exception_case(
         conversation.save(update_fields=["state", "updated_at"])
         ToolExecution.objects.create(
             conversation=conversation,
+            run=run,
             user=user,
             after_sales_case=after_sales_case,
             tool_name="escalate_system_exception",
@@ -710,8 +713,10 @@ def _write_human_audit(
     after_sales_case: AfterSalesCase | None = None,
     error_code: str = "",
 ) -> None:
+    source_run = confirmation.agent_runs.order_by("-created_at").first()
     ToolExecution.objects.create(
         conversation=confirmation.conversation,
+        run=source_run,
         user=confirmation.user,
         after_sales_case=after_sales_case,
         confirmation_request=confirmation,
@@ -724,6 +729,24 @@ def _write_human_audit(
         error_code=error_code,
         duration_ms=int((perf_counter() - started_at) * 1000),
     )
+    if source_run is not None:
+        AgentRunEvent.objects.create(
+            run=source_run,
+            event_type=AgentRunEvent.EventType.HUMAN_ACTION,
+            status=(
+                AgentRunEvent.Status.SUCCEEDED
+                if status == ToolExecution.Status.SUCCEEDED
+                else AgentRunEvent.Status.FAILED
+            ),
+            sequence=source_run.events.count() + 1,
+            name="用户确认执行售后申请" if status == ToolExecution.Status.SUCCEEDED else "售后申请执行失败",
+            detail={
+                "tool_name": "confirm_after_sales_request",
+                "status": status,
+                "error_code": error_code[:100],
+            },
+            duration_ms=int((perf_counter() - started_at) * 1000),
+        )
 
 
 def _mark_confirmation_failed(
@@ -879,4 +902,14 @@ def reject_confirmation(*, user: Any, confirmation_id: Any) -> ConfirmationReque
         confirmation.save(update_fields=["status", "result", "updated_at"])
         confirmation.conversation.state = AgentConversation.State.ACTIVE
         confirmation.conversation.save(update_fields=["state", "updated_at"])
+        source_run = confirmation.agent_runs.order_by("-created_at").first()
+        if source_run is not None:
+            AgentRunEvent.objects.create(
+                run=source_run,
+                event_type=AgentRunEvent.EventType.HUMAN_ACTION,
+                status=AgentRunEvent.Status.INFO,
+                sequence=source_run.events.count() + 1,
+                name="用户拒绝售后申请",
+                detail={"status": confirmation.status},
+            )
         return confirmation

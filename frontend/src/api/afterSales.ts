@@ -4,6 +4,8 @@ import type {
   AfterSalesCase,
   AfterSalesNotification,
   AfterSalesNotificationList,
+  AgentRunDetail,
+  AgentRunListResponse,
   ConfirmationExecutionResponse,
   ConfirmationRejectionResponse,
   SendAgentMessageResponse,
@@ -25,6 +27,12 @@ export interface StaffCaseFilters {
 
 export interface StaffOrderFilters {
   status?: string;
+  search?: string;
+}
+
+export interface AgentRunFilters {
+  status?: string;
+  intent?: string;
   search?: string;
 }
 
@@ -109,6 +117,18 @@ export const afterSalesApi = {
 
   shipStaffOrder: async (orderId: string): Promise<StaffOrder> => {
     const { data } = await apiClient.post<StaffOrder>(`/after-sales/staff/orders/${orderId}/ship/`);
+    return data;
+  },
+
+  listStaffAgentRuns: async (filters: AgentRunFilters = {}): Promise<AgentRunListResponse> => {
+    const { data } = await apiClient.get<AgentRunListResponse>("/after-sales/staff/agent-runs/", {
+      params: filters,
+    });
+    return data;
+  },
+
+  getStaffAgentRun: async (runId: string): Promise<AgentRunDetail> => {
+    const { data } = await apiClient.get<AgentRunDetail>(`/after-sales/staff/agent-runs/${runId}/`);
     return data;
   },
 
