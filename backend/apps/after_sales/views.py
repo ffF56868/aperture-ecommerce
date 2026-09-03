@@ -1,6 +1,9 @@
 """API endpoints for after-sales rules and the controlled Agent conversation."""
 
+import logging
+
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework.exceptions import NotFound
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
@@ -11,7 +14,7 @@ from apps.cart_orders.models import Order
 
 from .agent_service import AfterSalesAgentUnavailableError, run_agent_turn
 from .collaboration import get_stored_plan_payload
-from .models import AfterSalesCase, AgentConversation, AgentMessage
+from .models import AfterSalesCase, AfterSalesNotification, AgentConversation, AgentMessage
 from .openai_client import OpenAIConfigurationError
 from .policies import AFTER_SALES_POLICIES, get_policy
 from .serializers import (
@@ -20,6 +23,9 @@ from .serializers import (
     AgentConversationTurnSerializer,
     AgentMessageHistorySerializer,
     AfterSalesCaseResponseSerializer,
+    AfterSalesNotificationListSerializer,
+    AfterSalesNotificationReadAllSerializer,
+    AfterSalesNotificationSerializer,
     StaffAfterSalesCaseSerializer,
     StaffAfterSalesCaseUpdateSerializer,
     StaffOrderSerializer,
@@ -44,6 +50,13 @@ from .workflow import (
     ship_staff_order,
     update_staff_case,
 )
+from .notifications import (
+    mark_all_notifications_read,
+    mark_notification_read,
+    serialize_notification,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def _conversation_workflow_payload(conversation):
@@ -133,6 +146,15 @@ class AgentConversationMessageView(APIView):
             return Response(
                 {"detail": "智能售后服务暂时不可用，请稍后重试。"}, status=503
             )
+        except Exception:
+            # Never let an unexpected Agent failure become Django's HTML debug page.
+            # The frontend can then show a useful message and the user can retry.
+            logger.exception("Unexpected after-sales Agent request failure")
+            if created:
+                conversation.delete()
+            return Response(
+                {"detail": "售后助手暂时无法完成这次请求，请稍后重试。"}, status=503
+            )
 
         return Response(
             {
@@ -182,6 +204,68 @@ class AfterSalesCaseListView(APIView):
     def get(self, request, *args, **kwargs):
         return Response(
             [serialize_after_sales_case(item) for item in list_recent_cases(user=request.user)]
+        )
+
+
+@extend_schema(
+    summary="获取当前用户的售后通知",
+    tags=["售后通知"],
+    responses=AfterSalesNotificationListSerializer,
+)
+class AfterSalesNotificationListView(APIView):
+    """Return only notifications belonging to the authenticated customer."""
+
+    permission_classes = (IsAuthenticated,)
+
+    def get(self, request, *args, **kwargs):
+        notifications = list(
+            AfterSalesNotification.objects.filter(user=request.user)
+            .select_related("after_sales_case")
+            .order_by("-created_at")[:50]
+        )
+        return Response(
+            {
+                "unread_count": AfterSalesNotification.objects.filter(
+                    user=request.user, is_read=False
+                ).count(),
+                "notifications": [serialize_notification(item) for item in notifications],
+            }
+        )
+
+
+@extend_schema(
+    summary="将一条售后通知标记为已读",
+    tags=["售后通知"],
+    request=None,
+    responses=AfterSalesNotificationSerializer,
+)
+class AfterSalesNotificationReadView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request, notification_id, *args, **kwargs):
+        notification = get_object_or_404(
+            AfterSalesNotification, id=notification_id, user=request.user
+        )
+        notification = mark_notification_read(user=request.user, notification_id=notification.id)
+        return Response(serialize_notification(notification))
+
+
+@extend_schema(
+    summary="将当前用户的售后通知全部标记为已读",
+    tags=["售后通知"],
+    request=None,
+    responses=AfterSalesNotificationReadAllSerializer,
+)
+class AfterSalesNotificationReadAllView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request, *args, **kwargs):
+        updated_count = mark_all_notifications_read(user=request.user)
+        return Response(
+            {
+                "updated_count": updated_count,
+                "read_at": timezone.now().isoformat(),
+            }
         )
 
 

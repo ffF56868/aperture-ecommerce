@@ -240,6 +240,20 @@ class AfterSalesAgentAPITests(TestCase):
         self.assertEqual(AgentMessage.objects.count(), 0)
         self.assertEqual(AgentConversation.objects.count(), 0)
 
+    @patch("apps.after_sales.views.run_agent_turn")
+    def test_unexpected_agent_failure_returns_json_instead_of_debug_html(self, mock_run_agent_turn):
+        mock_run_agent_turn.side_effect = RuntimeError("unexpected provider failure")
+
+        response = self.client.post(
+            "/api/v1/after-sales/conversations/", {"message": "查询订单"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.data["detail"], "售后助手暂时无法完成这次请求，请稍后重试。"
+        )
+        self.assertEqual(AgentConversation.objects.count(), 0)
+
     @patch("apps.after_sales.agent_service.get_openai_client")
     def test_tool_round_limit_stops_before_a_fourth_model_request(self, mock_get_client):
         fake_client = FakeOpenAIClient(
@@ -259,6 +273,46 @@ class AfterSalesAgentAPITests(TestCase):
         self.assertIn("查询步骤较多", response.data["assistant_message"])
         self.assertEqual(len(fake_client.responses.calls), 3)
         self.assertEqual(ToolExecution.objects.count(), 3)
+
+    @patch("apps.after_sales.agent_service.get_openai_client")
+    def test_confirmation_at_tool_round_limit_has_actionable_customer_message(self, mock_get_client):
+        self.order.status = Order.Status.PAID
+        self.order.save(update_fields=["status"])
+        fake_client = FakeOpenAIClient(
+            [
+                function_call_response(
+                    "get_my_order_detail",
+                    '{"order_id":"%s"}' % self.order.id,
+                    "call_1",
+                    "resp_1",
+                ),
+                function_call_response("list_after_sales_policies", "{}", "call_2", "resp_2"),
+                function_call_response(
+                    "prepare_after_sales_confirmation",
+                    (
+                        '{"order_id":"%s","policy_key":"return-refund",'
+                        '"reason":"不想要了"}' % self.order.id
+                    ),
+                    "call_3",
+                    "resp_3",
+                ),
+            ]
+        )
+        mock_get_client.return_value = fake_client
+
+        response = self.client.post(
+            "/api/v1/after-sales/conversations/",
+            {"message": "我要退货退款，原因是不想要了"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["state"], AgentConversation.State.AWAITING_CONFIRMATION)
+        self.assertIn("确认提交", response.data["assistant_message"])
+        self.assertNotIn("查询步骤较多", response.data["assistant_message"])
+        self.assertEqual(response.data["pending_confirmation"]["policy_key"], "return-refund")
+        self.assertEqual(len(fake_client.responses.calls), 3)
+        self.assertEqual(AfterSalesCase.objects.count(), 0)
 
     @patch("apps.after_sales.agent_service.get_openai_client")
     def test_dangerous_model_tool_call_is_blocked_without_a_follow_up_model_request(

@@ -1,11 +1,13 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { BriefcaseBusiness, Menu, MessageCircleMore, Search, ShoppingBag, User, X } from "lucide-react";
+import { Bell, BriefcaseBusiness, Menu, MessageCircleMore, Search, ShoppingBag, User, X } from "lucide-react";
 import { Container } from "@/components/ui/Container";
 import { Button } from "@/components/ui/Button";
 import { BRAND, NAV_LINKS } from "@/constants";
 import { useCart } from "@/hooks/useCart";
 import { useAuth } from "@/hooks/useAuth";
+import { afterSalesApi } from "@/api/afterSales";
 import { cn } from "@/utils/cn";
 
 export function Navbar() {
@@ -15,6 +17,13 @@ export function Navbar() {
   const { totalItems } = useCart();
   const { isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
+  const notificationsQuery = useQuery({
+    queryKey: ["after-sales-notifications"],
+    queryFn: afterSalesApi.listNotifications,
+    enabled: isAuthenticated,
+    refetchInterval: 30_000,
+  });
+  const unreadNotificationCount = notificationsQuery.data?.unread_count ?? 0;
 
   const submitSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -107,6 +116,19 @@ export function Navbar() {
               <User className="h-4.5 w-4.5" />
             </Button>
           </Link>
+
+          {isAuthenticated && (
+            <Link to="/notifications" className="relative">
+              <Button variant="ghost" size="icon" aria-label="通知中心" title="通知中心">
+                <Bell className="h-4.5 w-4.5" />
+              </Button>
+              {unreadNotificationCount > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-coral px-1 font-mono text-[10px] font-semibold text-white">
+                  {unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}
+                </span>
+              )}
+            </Link>
+          )}
 
           {isAuthenticated && (
             <Link to="/after-sales" className="md:hidden">

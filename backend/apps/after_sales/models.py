@@ -251,6 +251,66 @@ class AfterSalesCase(UUIDPrimaryKeyMixin, TimeStampedMixin):
         return f"{self.case_number} - {self.get_case_type_display()}"
 
 
+class AfterSalesNotification(UUIDPrimaryKeyMixin, TimeStampedMixin):
+    """An owner-scoped in-app notification emitted by a case lifecycle event."""
+
+    class EventType(models.TextChoices):
+        CASE_CREATED = "CASE_CREATED", "工单创建"
+        CASE_APPROVED = "CASE_APPROVED", "审核通过"
+        CASE_REJECTED = "CASE_REJECTED", "审核拒绝"
+        NEED_CUSTOMER_INFO = "NEED_CUSTOMER_INFO", "要求补充资料"
+
+    class EmailStatus(models.TextChoices):
+        PENDING = "PENDING", "待发送"
+        SENT = "SENT", "模拟已发送"
+        SKIPPED = "SKIPPED", "无邮箱已跳过"
+        FAILED = "FAILED", "发送失败"
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="用户",
+        on_delete=models.CASCADE,
+        related_name="after_sales_notifications",
+    )
+    after_sales_case = models.ForeignKey(
+        AfterSalesCase,
+        verbose_name="售后工单",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="notifications",
+    )
+    event_type = models.CharField("事件类型", max_length=32, choices=EventType.choices)
+    title = models.CharField("标题", max_length=160)
+    message = models.TextField("通知内容")
+    action_url = models.CharField("跳转地址", max_length=200, default="/after-sales")
+    is_read = models.BooleanField("已读", default=False)
+    read_at = models.DateTimeField("阅读时间", null=True, blank=True)
+    email_status = models.CharField(
+        "邮件状态", max_length=16, choices=EmailStatus.choices, default=EmailStatus.PENDING
+    )
+    email_sent_at = models.DateTimeField("邮件模拟发送时间", null=True, blank=True)
+    email_error = models.CharField("邮件错误", max_length=255, blank=True)
+
+    class Meta:
+        verbose_name = "售后站内通知"
+        verbose_name_plural = "售后站内通知"
+        ordering = ("-created_at",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=["after_sales_case", "event_type"],
+                name="after_sales_unique_case_notification_event",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["user", "is_read", "created_at"]),
+            models.Index(fields=["email_status", "created_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user} - {self.title}"
+
+
 class CustomerMemory(TimeStampedMixin):
     """Small, structured memories used to personalize later conversations."""
 

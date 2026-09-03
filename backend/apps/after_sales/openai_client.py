@@ -21,9 +21,14 @@ def get_openai_client() -> Any:
     # Keep the import lazy so management commands and tests work before the SDK is installed.
     from openai import OpenAI
 
+    # The API endpoint is served by Gunicorn with a shorter request lifetime than
+    # the SDK's default retry window. One bounded attempt lets the view return a
+    # controlled 503 instead of having the worker killed during a retry sleep.
+    request_timeout = max(5, min(settings.OPENAI_REQUEST_TIMEOUT_SECONDS, 20))
     return OpenAI(
         api_key=api_key,
-        timeout=settings.OPENAI_REQUEST_TIMEOUT_SECONDS,
+        timeout=request_timeout,
+        max_retries=0,
     )
 
 

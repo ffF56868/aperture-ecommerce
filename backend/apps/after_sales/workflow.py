@@ -13,7 +13,15 @@ from django.utils import timezone
 from apps.cart_orders.models import Order
 from apps.cart_orders.services import OrderTransitionError, cancel_pending_order
 
-from .models import AfterSalesCase, AgentConversation, AgentMessage, ConfirmationRequest, ToolExecution
+from .models import (
+    AfterSalesCase,
+    AfterSalesNotification,
+    AgentConversation,
+    AgentMessage,
+    ConfirmationRequest,
+    ToolExecution,
+)
+from .notifications import create_case_notification
 from .policies import get_policy
 
 logger = logging.getLogger(__name__)
@@ -366,6 +374,21 @@ def update_staff_case(
         after_sales_case.assigned_to = staff_user
         changed_fields.append("assigned_to")
         after_sales_case.save(update_fields=changed_fields)
+        if status == AfterSalesCase.Status.APPROVED:
+            create_case_notification(
+                after_sales_case,
+                AfterSalesNotification.EventType.CASE_APPROVED,
+            )
+        elif status == AfterSalesCase.Status.REJECTED:
+            create_case_notification(
+                after_sales_case,
+                AfterSalesNotification.EventType.CASE_REJECTED,
+            )
+        elif status == AfterSalesCase.Status.NEED_CUSTOMER_INFO:
+            create_case_notification(
+                after_sales_case,
+                AfterSalesNotification.EventType.NEED_CUSTOMER_INFO,
+            )
         ToolExecution.objects.create(
             conversation=after_sales_case.conversation,
             user=after_sales_case.user,
@@ -607,6 +630,7 @@ def create_automatic_case(
             reason=reason,
             agent_summary=f"Agent 根据“{policy['name']}”规则创建的售后工单。",
         )
+        create_case_notification(after_sales_case, AfterSalesNotification.EventType.CASE_CREATED)
         if policy_key == "human-service":
             conversation.state = AgentConversation.State.ESCALATED
             conversation.save(update_fields=["state", "updated_at"])
@@ -652,6 +676,7 @@ def create_system_exception_case(
                     f"最后错误代码：{safe_error_code}。"
                 ),
             )
+            create_case_notification(after_sales_case, AfterSalesNotification.EventType.CASE_CREATED)
             reused = False
 
         conversation.state = AgentConversation.State.ESCALATED
@@ -780,6 +805,10 @@ def execute_confirmation(*, user: Any, confirmation_id: Any) -> ConfirmationExec
                             priority=AfterSalesCase.Priority.NORMAL,
                             reason=confirmation.payload.get("reason", ""),
                             agent_summary=f"用户确认提交的“{policy['name']}”。",
+                        )
+                        create_case_notification(
+                            after_sales_case,
+                            AfterSalesNotification.EventType.CASE_CREATED,
                         )
                         order = confirmation.order
                         result = {

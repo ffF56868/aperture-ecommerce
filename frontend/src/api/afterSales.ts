@@ -2,6 +2,8 @@ import { apiClient } from "@/api/client";
 import type {
   AgentConversationDetail,
   AfterSalesCase,
+  AfterSalesNotification,
+  AfterSalesNotificationList,
   ConfirmationExecutionResponse,
   ConfirmationRejectionResponse,
   SendAgentMessageResponse,
@@ -39,6 +41,25 @@ export const afterSalesApi = {
 
   getCases: async (): Promise<AfterSalesCase[]> => {
     const { data } = await apiClient.get<AfterSalesCase[]>("/after-sales/cases/");
+    return data;
+  },
+
+  listNotifications: async (): Promise<AfterSalesNotificationList> => {
+    const { data } = await apiClient.get<AfterSalesNotificationList>("/after-sales/notifications/");
+    return data;
+  },
+
+  markNotificationRead: async (notificationId: string): Promise<AfterSalesNotification> => {
+    const { data } = await apiClient.post<AfterSalesNotification>(
+      `/after-sales/notifications/${notificationId}/read/`,
+    );
+    return data;
+  },
+
+  markAllNotificationsRead: async (): Promise<{ updated_count: number; read_at: string }> => {
+    const { data } = await apiClient.post<{ updated_count: number; read_at: string }>(
+      "/after-sales/notifications/read-all/",
+    );
     return data;
   },
 

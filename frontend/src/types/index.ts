@@ -168,6 +168,32 @@ export interface AfterSalesCase {
   created_at: string;
 }
 
+export type AfterSalesNotificationEvent =
+  | "CASE_CREATED"
+  | "CASE_APPROVED"
+  | "CASE_REJECTED"
+  | "NEED_CUSTOMER_INFO";
+
+export type AfterSalesNotificationEmailStatus = "PENDING" | "SENT" | "SKIPPED" | "FAILED";
+
+export interface AfterSalesNotification {
+  id: string;
+  event_type: AfterSalesNotificationEvent;
+  title: string;
+  message: string;
+  action_url: string;
+  is_read: boolean;
+  read_at: string | null;
+  email_status: AfterSalesNotificationEmailStatus;
+  created_at: string;
+  case_number: string | null;
+}
+
+export interface AfterSalesNotificationList {
+  unread_count: number;
+  notifications: AfterSalesNotification[];
+}
+
 export type AfterSalesCaseStatus =
   | "PENDING_REVIEW"
   | "IN_REVIEW"

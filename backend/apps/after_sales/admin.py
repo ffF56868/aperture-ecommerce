@@ -4,6 +4,7 @@ from .models import (
     AfterSalesCase,
     AgentConversation,
     AgentMessage,
+    AfterSalesNotification,
     ConfirmationRequest,
     CustomerMemory,
     KnowledgeChunk,
@@ -149,6 +150,44 @@ class ToolExecutionAdmin(admin.ModelAdmin):
         "result",
         "error_code",
         "duration_ms",
+        "created_at",
+        "updated_at",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(AfterSalesNotification)
+class AfterSalesNotificationAdmin(admin.ModelAdmin):
+    list_display = (
+        "title",
+        "event_type",
+        "user",
+        "after_sales_case",
+        "is_read",
+        "email_status",
+        "created_at",
+    )
+    list_filter = ("event_type", "is_read", "email_status")
+    search_fields = ("title", "message", "user__username", "after_sales_case__case_number")
+    autocomplete_fields = ("user", "after_sales_case")
+    readonly_fields = (
+        "id",
+        "user",
+        "after_sales_case",
+        "event_type",
+        "title",
+        "message",
+        "action_url",
+        "is_read",
+        "read_at",
+        "email_status",
+        "email_sent_at",
+        "email_error",
         "created_at",
         "updated_at",
     )

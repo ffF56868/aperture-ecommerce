@@ -67,7 +67,17 @@ export function getErrorMessage(
   fallback = "操作失败，请稍后重试。",
 ): string {
   if (axios.isAxiosError(error)) {
-    const data = error.response?.data as Record<string, unknown> | undefined;
+    const rawData = error.response?.data;
+    if (typeof rawData === "string") {
+      try {
+        const parsed = JSON.parse(rawData) as Record<string, unknown>;
+        if (typeof parsed.detail === "string") return parsed.detail;
+      } catch {
+        // HTML and plain-text server errors are not safe user-facing messages.
+      }
+      return fallback;
+    }
+    const data = rawData as Record<string, unknown> | undefined;
     if (!data) return fallback;
     if (typeof data.detail === "string") return data.detail;
     if (Array.isArray(data) && typeof data[0] === "string") return data[0];

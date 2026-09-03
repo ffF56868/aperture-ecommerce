@@ -76,6 +76,29 @@ class AfterSalesCaseResponseSerializer(serializers.Serializer):
     created_at = serializers.DateTimeField()
 
 
+class AfterSalesNotificationSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    event_type = serializers.CharField()
+    title = serializers.CharField()
+    message = serializers.CharField()
+    action_url = serializers.CharField()
+    is_read = serializers.BooleanField()
+    read_at = serializers.DateTimeField(allow_null=True)
+    email_status = serializers.CharField()
+    created_at = serializers.DateTimeField()
+    case_number = serializers.CharField(allow_null=True)
+
+
+class AfterSalesNotificationListSerializer(serializers.Serializer):
+    unread_count = serializers.IntegerField()
+    notifications = AfterSalesNotificationSerializer(many=True)
+
+
+class AfterSalesNotificationReadAllSerializer(serializers.Serializer):
+    updated_count = serializers.IntegerField()
+    read_at = serializers.DateTimeField()
+
+
 class AgentConversationTurnSerializer(serializers.Serializer):
     conversation_id = serializers.UUIDField()
     state = serializers.CharField()

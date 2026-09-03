@@ -6,6 +6,9 @@ from .views import (
     AfterSalesCaseListView,
     AfterSalesPolicyDetailView,
     AfterSalesPolicyListView,
+    AfterSalesNotificationListView,
+    AfterSalesNotificationReadAllView,
+    AfterSalesNotificationReadView,
     AgentConversationDetailView,
     AgentConversationMessageView,
     ConfirmationExecuteView,
@@ -31,6 +34,17 @@ urlpatterns = [
         name="conversation-detail",
     ),
     path("cases/", AfterSalesCaseListView.as_view(), name="case-list"),
+    path("notifications/", AfterSalesNotificationListView.as_view(), name="notification-list"),
+    path(
+        "notifications/<uuid:notification_id>/read/",
+        AfterSalesNotificationReadView.as_view(),
+        name="notification-read",
+    ),
+    path(
+        "notifications/read-all/",
+        AfterSalesNotificationReadAllView.as_view(),
+        name="notification-read-all",
+    ),
     path("staff/cases/", StaffAfterSalesCaseListView.as_view(), name="staff-case-list"),
     path(
         "staff/cases/<uuid:case_id>/",

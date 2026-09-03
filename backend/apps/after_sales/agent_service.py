@@ -240,6 +240,20 @@ def _knowledge_requires_human(result: dict[str, Any]) -> bool:
     return bool(result.get("ok") and result.get("data", {}).get("requires_human_escalation"))
 
 
+def _pending_confirmation_message(result: dict[str, Any] | None) -> str:
+    """Give the customer an actionable message when the tool loop ends on a confirmation."""
+
+    confirmation = (result or {}).get("data", {}).get("confirmation", {})
+    policy_key = confirmation.get("policy_key") if isinstance(confirmation, Mapping) else ""
+    if policy_key == "return-refund":
+        return "已生成待你确认的退货退款申请，尚未创建工单。请在右侧点击“确认提交”，确认后才会创建退货退款工单。"
+    if policy_key == "refund":
+        return "已生成待你确认的退款申请，尚未创建工单。请在右侧点击“确认提交”，确认后才会创建退款工单。"
+    if policy_key == "cancel-order":
+        return "已生成待你确认的取消订单申请，订单尚未取消。请在右侧点击“确认提交”后执行取消。"
+    return "已生成待你确认的售后申请，尚未执行操作。请在右侧点击“确认提交”继续。"
+
+
 def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) -> AgentRunResult:
     """Persist one user turn and complete up to three allowlisted tool rounds."""
 
@@ -273,6 +287,7 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
     final_message = ""
     escalation_case = None
     knowledge_source_labels: list[str] = []
+    confirmation_result: dict[str, Any] | None = None
 
     for round_index in range(MAX_TOOL_ROUNDS):
         function_calls = _function_calls(response)
@@ -317,6 +332,8 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
                 for source_label in _knowledge_sources(result):
                     if source_label not in knowledge_source_labels:
                         knowledge_source_labels.append(source_label)
+            if tool_name == "prepare_after_sales_confirmation" and result.get("ok"):
+                confirmation_result = result
             AgentMessage.objects.create(
                 conversation=conversation,
                 role=AgentMessage.Role.TOOL,
@@ -404,7 +421,11 @@ def run_agent_turn(*, user: Any, conversation: AgentConversation, message: str) 
             break
 
         if round_index == MAX_TOOL_ROUNDS - 1:
-            final_message = "我已完成必要的信息核验，但本次查询步骤较多。请换一种简短说法继续咨询。"
+            final_message = (
+                _pending_confirmation_message(confirmation_result)
+                if confirmation_result is not None
+                else "我已完成必要的信息核验，但本次查询步骤较多。请换一种简短说法继续咨询。"
+            )
             break
 
         response = _call_model(

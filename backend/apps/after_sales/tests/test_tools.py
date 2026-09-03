@@ -358,3 +358,4 @@ class AfterSalesToolTests(TestCase):
         client = get_openai_client()
 
         self.assertEqual(client.api_key, "sk-test-not-a-real-key")
+        self.assertEqual(client.max_retries, 0)
