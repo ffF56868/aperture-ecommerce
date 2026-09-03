@@ -4,6 +4,8 @@ import type {
   AfterSalesCase,
   AfterSalesNotification,
   AfterSalesNotificationList,
+  AgentEvaluationRunDetail,
+  AgentEvaluationRunListResponse,
   AgentRunDetail,
   AgentRunListResponse,
   ConfirmationExecutionResponse,
@@ -129,6 +131,27 @@ export const afterSalesApi = {
 
   getStaffAgentRun: async (runId: string): Promise<AgentRunDetail> => {
     const { data } = await apiClient.get<AgentRunDetail>(`/after-sales/staff/agent-runs/${runId}/`);
+    return data;
+  },
+
+  listStaffAgentEvaluations: async (): Promise<AgentEvaluationRunListResponse> => {
+    const { data } = await apiClient.get<AgentEvaluationRunListResponse>(
+      "/after-sales/staff/agent-evaluations/",
+    );
+    return data;
+  },
+
+  getStaffAgentEvaluation: async (evaluationRunId: string): Promise<AgentEvaluationRunDetail> => {
+    const { data } = await apiClient.get<AgentEvaluationRunDetail>(
+      `/after-sales/staff/agent-evaluations/${evaluationRunId}/`,
+    );
+    return data;
+  },
+
+  runStaffAgentEvaluation: async (): Promise<AgentEvaluationRunDetail> => {
+    const { data } = await apiClient.post<AgentEvaluationRunDetail>(
+      "/after-sales/staff/agent-evaluations/run/",
+    );
     return data;
   },
 

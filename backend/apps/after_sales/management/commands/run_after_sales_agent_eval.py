@@ -47,9 +47,17 @@ class Command(BaseCommand):
         )
 
         summary = report.as_dict()["summary"]
+        metrics = report.as_dict()["metrics"]
         self.stdout.write(
             self.style.SUCCESS(
                 f"售后 Agent Eval 已完成：{summary['passed']}/{summary['total']} 通过。\n"
+                f"评测批次：{report.evaluation_run_id}\n"
+                f"意图 {metrics['intent_recognition']['rate']}% · "
+                f"工具 {metrics['tool_selection']['rate']}% · "
+                f"参数 {metrics['parameter_correctness']['rate']}% · "
+                f"越权拦截 {metrics['unauthorized_interception']['rate']}% · "
+                f"危险拦截 {metrics['dangerous_interception']['rate']}% · "
+                f"平均 {metrics['average_response_time']['value']} ms\n"
                 f"Markdown：{markdown_path}\nJSON：{json_path}"
             )
         )

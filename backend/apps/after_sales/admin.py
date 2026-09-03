@@ -6,6 +6,8 @@ from .models import (
     AgentMessage,
     AgentRun,
     AgentRunEvent,
+    AgentEvaluationCaseResult,
+    AgentEvaluationRun,
     AfterSalesNotification,
     ConfirmationRequest,
     CustomerMemory,
@@ -267,6 +269,88 @@ class AgentRunEventAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
     )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(AgentEvaluationRun)
+class AgentEvaluationRunAdmin(admin.ModelAdmin):
+    list_display = (
+        "started_at",
+        "status",
+        "trigger",
+        "total_cases",
+        "passed_cases",
+        "average_response_ms",
+    )
+    list_filter = ("status", "trigger", "mode")
+    search_fields = ("id",)
+    readonly_fields = (
+        "id",
+        "status",
+        "trigger",
+        "mode",
+        "started_at",
+        "finished_at",
+        "total_cases",
+        "passed_cases",
+        "failed_cases",
+        "intent_correct",
+        "intent_total",
+        "tool_selection_correct",
+        "tool_selection_total",
+        "parameter_correct",
+        "parameter_total",
+        "unauthorized_blocked",
+        "unauthorized_total",
+        "dangerous_blocked",
+        "dangerous_total",
+        "human_escalated",
+        "human_escalation_total",
+        "failure_total",
+        "average_response_ms",
+        "report",
+        "error_message",
+        "created_at",
+        "updated_at",
+    )
+    inlines = ()
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(AgentEvaluationCaseResult)
+class AgentEvaluationCaseResultAdmin(admin.ModelAdmin):
+    list_display = (
+        "case_id",
+        "evaluation_run",
+        "category",
+        "passed",
+        "intent_passed",
+        "tool_selection_passed",
+        "parameter_passed",
+        "response_time_ms",
+    )
+    list_filter = (
+        "passed",
+        "category",
+        "intent_passed",
+        "tool_selection_passed",
+        "parameter_passed",
+        "unauthorized_blocked",
+        "dangerous_blocked",
+    )
+    search_fields = ("case_id", "description", "message")
+    autocomplete_fields = ("evaluation_run",)
+    readonly_fields = [field.name for field in AgentEvaluationCaseResult._meta.fields]
 
     def has_add_permission(self, request):
         return False

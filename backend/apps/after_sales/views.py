@@ -19,10 +19,13 @@ from .agent_service import (
     run_agent_turn,
 )
 from .collaboration import get_stored_plan_payload
+from .evaluation import AfterSalesAgentEvaluator
 from .models import (
     AfterSalesCase,
     AfterSalesNotification,
     AgentConversation,
+    AgentEvaluationCaseResult,
+    AgentEvaluationRun,
     AgentMessage,
     AgentRun,
     AgentRunEvent,
@@ -44,6 +47,8 @@ from .serializers import (
     StaffOrderSerializer,
     AgentRunDetailSerializer,
     AgentRunListResponseSerializer,
+    AgentEvaluationRunDetailSerializer,
+    AgentEvaluationRunListResponseSerializer,
     ConfirmationExecutionSerializer,
     ConfirmationRejectionSerializer,
     ConversationMessageRequestSerializer,
@@ -150,6 +155,110 @@ def _serialize_agent_run_detail(run):
             _serialize_agent_run_tool_execution(execution)
             for execution in run.tool_executions.all()
         ],
+    }
+
+
+def _serialize_evaluation_run_list_item(evaluation_run):
+    return {
+        "id": evaluation_run.id,
+        "status": evaluation_run.status,
+        "status_label": evaluation_run.get_status_display(),
+        "trigger": evaluation_run.trigger,
+        "trigger_label": evaluation_run.get_trigger_display(),
+        "mode": evaluation_run.mode,
+        "started_at": evaluation_run.started_at,
+        "finished_at": evaluation_run.finished_at,
+        "total_cases": evaluation_run.total_cases,
+        "passed_cases": evaluation_run.passed_cases,
+        "failed_cases": evaluation_run.failed_cases,
+        "average_response_ms": evaluation_run.average_response_ms,
+    }
+
+
+def _evaluation_rate(passed, total):
+    return round(passed / total * 100, 1) if total else 0.0
+
+
+def _serialize_evaluation_metrics(evaluation_run):
+    def metric(passed, total):
+        return {
+            "passed": passed,
+            "total": total,
+            "failed": total - passed,
+            "rate": _evaluation_rate(passed, total),
+        }
+
+    return {
+        "intent_recognition": metric(evaluation_run.intent_correct, evaluation_run.intent_total),
+        "tool_selection": metric(
+            evaluation_run.tool_selection_correct, evaluation_run.tool_selection_total
+        ),
+        "parameter_correctness": metric(
+            evaluation_run.parameter_correct, evaluation_run.parameter_total
+        ),
+        "unauthorized_interception": metric(
+            evaluation_run.unauthorized_blocked, evaluation_run.unauthorized_total
+        ),
+        "dangerous_interception": metric(
+            evaluation_run.dangerous_blocked, evaluation_run.dangerous_total
+        ),
+        "average_response_time": {
+            "value": evaluation_run.average_response_ms,
+            "unit": "ms",
+        },
+        "human_handoff": metric(
+            evaluation_run.human_escalated, evaluation_run.human_escalation_total
+        ),
+        "failure": {
+            "failed": evaluation_run.failure_total,
+            "total": evaluation_run.total_cases,
+            "rate": _evaluation_rate(evaluation_run.failure_total, evaluation_run.total_cases),
+        },
+    }
+
+
+def _serialize_evaluation_case_result(case_result):
+    return {
+        "id": case_result.id,
+        "case_id": case_result.case_id,
+        "category": case_result.category,
+        "description": case_result.description,
+        "message": case_result.message,
+        "expected_intent": case_result.expected_intent,
+        "actual_intent": case_result.actual_intent,
+        "expected_tools": case_result.expected_tools,
+        "actual_tools": case_result.actual_tools,
+        "expected_arguments": case_result.expected_arguments,
+        "actual_arguments": case_result.actual_arguments,
+        "passed": case_result.passed,
+        "intent_passed": case_result.intent_passed,
+        "tool_selection_passed": case_result.tool_selection_passed,
+        "parameter_applicable": case_result.parameter_applicable,
+        "parameter_passed": case_result.parameter_passed,
+        "authorization_passed": case_result.authorization_passed,
+        "unauthorized_case": case_result.unauthorized_case,
+        "unauthorized_blocked": case_result.unauthorized_blocked,
+        "dangerous_case": case_result.dangerous_case,
+        "dangerous_blocked": case_result.dangerous_blocked,
+        "response_compliance_passed": case_result.response_compliance_passed,
+        "human_escalated": case_result.human_escalated,
+        "failed": case_result.failed,
+        "response_time_ms": case_result.response_time_ms,
+        "actual_error_codes": case_result.actual_error_codes,
+        "assistant_message": case_result.assistant_message,
+        "failures": case_result.failures,
+    }
+
+
+def _serialize_evaluation_run_detail(evaluation_run):
+    return {
+        **_serialize_evaluation_run_list_item(evaluation_run),
+        "metrics": _serialize_evaluation_metrics(evaluation_run),
+        "cases": [
+            _serialize_evaluation_case_result(case_result)
+            for case_result in evaluation_run.case_results.all()
+        ],
+        "error_message": evaluation_run.error_message,
     }
 
 
@@ -449,6 +558,63 @@ class StaffAgentRunDetailView(APIView):
             id=run_id,
         )
         return Response(_serialize_agent_run_detail(run))
+
+
+@extend_schema(
+    summary="管理员：查看 Agent 评测批次",
+    tags=["Agent 评测"],
+    operation_id="staff_agent_evaluation_list",
+    responses=AgentEvaluationRunListResponseSerializer,
+)
+class StaffAgentEvaluationListView(APIView):
+    permission_classes = (IsAdminUser,)
+
+    def get(self, request, *args, **kwargs):
+        queryset = AgentEvaluationRun.objects.order_by("-started_at")
+        latest = queryset.first()
+        return Response(
+            {
+                "summary": {
+                    "total_runs": queryset.count(),
+                    "latest_run_id": latest.id if latest else None,
+                    "latest_started_at": latest.started_at if latest else None,
+                },
+                "runs": [_serialize_evaluation_run_list_item(item) for item in queryset[:30]],
+            }
+        )
+
+
+@extend_schema(
+    summary="管理员：查看 Agent 评测结果",
+    tags=["Agent 评测"],
+    operation_id="staff_agent_evaluation_detail",
+    responses=AgentEvaluationRunDetailSerializer,
+)
+class StaffAgentEvaluationDetailView(APIView):
+    permission_classes = (IsAdminUser,)
+
+    def get(self, request, evaluation_run_id, *args, **kwargs):
+        evaluation_run = get_object_or_404(
+            AgentEvaluationRun.objects.prefetch_related("case_results"), id=evaluation_run_id
+        )
+        return Response(_serialize_evaluation_run_detail(evaluation_run))
+
+
+@extend_schema(
+    summary="管理员：运行 Agent 评测",
+    tags=["Agent 评测"],
+    operation_id="staff_agent_evaluation_run",
+    responses=AgentEvaluationRunDetailSerializer,
+)
+class StaffAgentEvaluationRunView(APIView):
+    permission_classes = (IsAdminUser,)
+
+    def post(self, request, *args, **kwargs):
+        report = AfterSalesAgentEvaluator().run(trigger=AgentEvaluationRun.Trigger.DASHBOARD)
+        evaluation_run = get_object_or_404(
+            AgentEvaluationRun.objects.prefetch_related("case_results"), id=report.evaluation_run_id
+        )
+        return Response(_serialize_evaluation_run_detail(evaluation_run), status=201)
 
 
 @extend_schema(

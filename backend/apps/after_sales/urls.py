@@ -19,6 +19,9 @@ from .views import (
     StaffAfterSalesCaseShipOrderView,
     StaffAgentRunDetailView,
     StaffAgentRunListView,
+    StaffAgentEvaluationDetailView,
+    StaffAgentEvaluationListView,
+    StaffAgentEvaluationRunView,
     StaffOrderListView,
     StaffOrderShipView,
 )
@@ -69,6 +72,13 @@ urlpatterns = [
         "staff/agent-runs/<uuid:run_id>/",
         StaffAgentRunDetailView.as_view(),
         name="staff-agent-run-detail",
+    ),
+    path("staff/agent-evaluations/", StaffAgentEvaluationListView.as_view(), name="staff-agent-evaluation-list"),
+    path("staff/agent-evaluations/run/", StaffAgentEvaluationRunView.as_view(), name="staff-agent-evaluation-run"),
+    path(
+        "staff/agent-evaluations/<uuid:evaluation_run_id>/",
+        StaffAgentEvaluationDetailView.as_view(),
+        name="staff-agent-evaluation-detail",
     ),
     path(
         "staff/orders/<uuid:order_id>/ship/",

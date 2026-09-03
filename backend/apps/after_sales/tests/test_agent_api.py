@@ -13,6 +13,8 @@ from apps.after_sales.models import (
     ToolExecution,
     AgentRun,
     AgentRunEvent,
+    AgentEvaluationCaseResult,
+    AgentEvaluationRun,
 )
 from apps.after_sales.knowledge import KnowledgeSearchResult
 from apps.after_sales.openai_client import OpenAIConfigurationError
@@ -360,6 +362,65 @@ class AfterSalesAgentAPITests(TestCase):
         self.assertEqual(str(list_response.data["runs"][0]["id"]), str(run.id))
         self.assertEqual(detail_response.status_code, 200)
         self.assertEqual(detail_response.data["user"]["username"], self.user.username)
+
+    def test_regular_user_cannot_access_agent_evaluation(self):
+        list_response = self.client.get("/api/v1/after-sales/staff/agent-evaluations/")
+        run_response = self.client.post("/api/v1/after-sales/staff/agent-evaluations/run/")
+
+        self.assertEqual(list_response.status_code, 403)
+        self.assertEqual(run_response.status_code, 403)
+
+    def test_staff_can_query_agent_evaluation_detail(self):
+        staff = User.objects.create_user(
+            username="agent_evaluation_staff",
+            phone_number="+8613800138011",
+            password="Demo123!",
+        )
+        staff.is_staff = True
+        staff.save(update_fields=["is_staff"])
+        evaluation_run = AgentEvaluationRun.objects.create(
+            status=AgentEvaluationRun.Status.SUCCEEDED,
+            trigger=AgentEvaluationRun.Trigger.DASHBOARD,
+            total_cases=1,
+            passed_cases=1,
+            intent_correct=1,
+            intent_total=1,
+            tool_selection_correct=1,
+            tool_selection_total=1,
+            parameter_correct=1,
+            parameter_total=1,
+            average_response_ms=24,
+        )
+        AgentEvaluationCaseResult.objects.create(
+            evaluation_run=evaluation_run,
+            case_id="EVAL-TEST",
+            category="测试",
+            description="测试案例",
+            message="测试输入",
+            expected_intent="GENERAL",
+            actual_intent="GENERAL",
+            expected_tools=[],
+            actual_tools=[],
+            passed=True,
+            intent_passed=True,
+            tool_selection_passed=True,
+            parameter_applicable=False,
+            parameter_passed=None,
+            authorization_passed=True,
+            response_compliance_passed=True,
+        )
+        self.client.force_authenticate(staff)
+
+        list_response = self.client.get("/api/v1/after-sales/staff/agent-evaluations/")
+        detail_response = self.client.get(
+            f"/api/v1/after-sales/staff/agent-evaluations/{evaluation_run.id}/"
+        )
+
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(list_response.data["summary"]["total_runs"], 1)
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(detail_response.data["metrics"]["intent_recognition"]["rate"], 100.0)
+        self.assertEqual(detail_response.data["cases"][0]["case_id"], "EVAL-TEST")
 
     @patch("apps.after_sales.agent_service.get_openai_client")
     def test_dangerous_model_tool_call_is_blocked_without_a_follow_up_model_request(

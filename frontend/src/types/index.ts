@@ -381,3 +381,73 @@ export interface AgentRunDetail extends AgentRunListItem {
   events: AgentRunEvent[];
   tool_executions: AgentRunToolExecution[];
 }
+
+export interface AgentEvaluationMetric {
+  passed?: number;
+  total?: number;
+  failed?: number;
+  rate?: number;
+  value?: number;
+  unit?: string;
+}
+
+export interface AgentEvaluationCaseResult {
+  id: string;
+  case_id: string;
+  category: string;
+  description: string;
+  message: string;
+  expected_intent: string;
+  actual_intent: string;
+  expected_tools: string[];
+  actual_tools: string[];
+  expected_arguments: Array<Record<string, unknown>>;
+  actual_arguments: Array<Record<string, unknown>>;
+  passed: boolean;
+  intent_passed: boolean;
+  tool_selection_passed: boolean;
+  parameter_applicable: boolean;
+  parameter_passed: boolean | null;
+  authorization_passed: boolean;
+  unauthorized_case: boolean;
+  unauthorized_blocked: boolean;
+  dangerous_case: boolean;
+  dangerous_blocked: boolean;
+  response_compliance_passed: boolean;
+  human_escalated: boolean;
+  failed: boolean;
+  response_time_ms: number;
+  actual_error_codes: string[];
+  assistant_message: string;
+  failures: string[];
+}
+
+export interface AgentEvaluationRunListItem {
+  id: string;
+  status: string;
+  status_label: string;
+  trigger: string;
+  trigger_label: string;
+  mode: string;
+  started_at: string;
+  finished_at: string | null;
+  total_cases: number;
+  passed_cases: number;
+  failed_cases: number;
+  average_response_ms: number;
+}
+
+export interface AgentEvaluationRunListResponse {
+  summary: {
+    total_runs: number;
+    latest_run_id: string | null;
+    latest_started_at: string | null;
+  };
+  runs: AgentEvaluationRunListItem[];
+}
+
+export interface AgentEvaluationRunDetail extends AgentEvaluationRunListItem {
+  metrics: Record<string, AgentEvaluationMetric>;
+  cases: AgentEvaluationCaseResult[];
+  error_message: string;
+}

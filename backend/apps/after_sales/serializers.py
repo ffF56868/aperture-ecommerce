@@ -277,3 +277,75 @@ class AgentRunDetailSerializer(AgentRunListItemSerializer):
     confirmation_request_id = serializers.UUIDField(allow_null=True)
     events = AgentRunEventSerializer(many=True)
     tool_executions = AgentRunToolExecutionSerializer(many=True)
+
+
+class AgentEvaluationMetricSerializer(serializers.Serializer):
+    passed = serializers.IntegerField(required=False)
+    total = serializers.IntegerField(required=False)
+    failed = serializers.IntegerField(required=False)
+    rate = serializers.FloatField(required=False)
+    value = serializers.IntegerField(required=False)
+    unit = serializers.CharField(required=False)
+
+
+class AgentEvaluationCaseResultSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    case_id = serializers.CharField()
+    category = serializers.CharField()
+    description = serializers.CharField()
+    message = serializers.CharField()
+    expected_intent = serializers.CharField()
+    actual_intent = serializers.CharField()
+    expected_tools = serializers.ListField(child=serializers.CharField())
+    actual_tools = serializers.ListField(child=serializers.CharField())
+    expected_arguments = serializers.ListField(child=serializers.DictField())
+    actual_arguments = serializers.ListField(child=serializers.DictField())
+    passed = serializers.BooleanField()
+    intent_passed = serializers.BooleanField()
+    tool_selection_passed = serializers.BooleanField()
+    parameter_applicable = serializers.BooleanField()
+    parameter_passed = serializers.BooleanField(allow_null=True)
+    authorization_passed = serializers.BooleanField()
+    unauthorized_case = serializers.BooleanField()
+    unauthorized_blocked = serializers.BooleanField()
+    dangerous_case = serializers.BooleanField()
+    dangerous_blocked = serializers.BooleanField()
+    response_compliance_passed = serializers.BooleanField()
+    human_escalated = serializers.BooleanField()
+    failed = serializers.BooleanField()
+    response_time_ms = serializers.IntegerField()
+    actual_error_codes = serializers.ListField(child=serializers.CharField())
+    assistant_message = serializers.CharField()
+    failures = serializers.ListField(child=serializers.CharField())
+
+
+class AgentEvaluationRunListItemSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    status = serializers.CharField()
+    status_label = serializers.CharField()
+    trigger = serializers.CharField()
+    trigger_label = serializers.CharField()
+    mode = serializers.CharField()
+    started_at = serializers.DateTimeField()
+    finished_at = serializers.DateTimeField(allow_null=True)
+    total_cases = serializers.IntegerField()
+    passed_cases = serializers.IntegerField()
+    failed_cases = serializers.IntegerField()
+    average_response_ms = serializers.IntegerField()
+
+
+class AgentEvaluationSummarySerializer(serializers.Serializer):
+    total_runs = serializers.IntegerField()
+    latest_run_id = serializers.UUIDField(allow_null=True)
+    latest_started_at = serializers.DateTimeField(allow_null=True)
+
+
+class AgentEvaluationRunListResponseSerializer(serializers.Serializer):
+    summary = AgentEvaluationSummarySerializer()
+    runs = AgentEvaluationRunListItemSerializer(many=True)
+
+
+class AgentEvaluationRunDetailSerializer(AgentEvaluationRunListItemSerializer):
+    metrics = serializers.DictField(child=AgentEvaluationMetricSerializer())
+    cases = AgentEvaluationCaseResultSerializer(many=True)
+    error_message = serializers.CharField()

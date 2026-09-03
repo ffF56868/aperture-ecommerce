@@ -15,6 +15,7 @@ import { Contact } from "@/pages/Contact";
 import { AfterSalesAgent } from "@/pages/AfterSalesAgent";
 import { StaffAfterSalesWorkbench } from "@/pages/StaffAfterSalesWorkbench";
 import { StaffAgentObservability } from "@/pages/StaffAgentObservability";
+import { StaffAgentEvaluation } from "@/pages/StaffAgentEvaluation";
 import { Notifications } from "@/pages/Notifications";
 import { NotFound } from "@/pages/NotFound";
 
@@ -38,6 +39,7 @@ export function App() {
         <Route path="/notifications" element={<Notifications />} />
         <Route path="/staff/after-sales" element={<StaffAfterSalesWorkbench />} />
         <Route path="/staff/agent-observability" element={<StaffAgentObservability />} />
+        <Route path="/staff/agent-evaluation" element={<StaffAgentEvaluation />} />
         <Route path="/404" element={<NotFound />} />
         <Route path="*" element={<NotFound />} />
       </Route>

@@ -121,6 +121,8 @@ docker compose exec backend python manage.py run_after_sales_agent_eval
 
 详细的评测设计、指标与报告说明见 [售后 Agent Eval 说明](docs/after-sales-agent-eval.md)。
 
+管理员也可以登录网站后打开“Agent 评测”，点击“运行评测”查看历史批次、指标卡、简单进度图和 20 条案例明细。
+
 ## Manual (non-Docker) setup
 
 **Backend**

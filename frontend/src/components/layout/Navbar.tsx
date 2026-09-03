@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { Activity, Bell, BriefcaseBusiness, Menu, MessageCircleMore, Search, ShoppingBag, User, X } from "lucide-react";
+import { Activity, Bell, BriefcaseBusiness, ClipboardCheck, Menu, MessageCircleMore, Search, ShoppingBag, User, X } from "lucide-react";
 import { Container } from "@/components/ui/Container";
 import { Button } from "@/components/ui/Button";
 import { BRAND, NAV_LINKS } from "@/constants";
@@ -91,6 +91,19 @@ export function Navbar() {
           )}
           {isAuthenticated && user?.is_staff && (
             <NavLink
+              to="/staff/agent-evaluation"
+              className={({ isActive }) =>
+                cn(
+                  "rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                  isActive ? "text-ink" : "text-ink-muted hover:text-ink",
+                )
+              }
+            >
+              Agent 评测
+            </NavLink>
+          )}
+          {isAuthenticated && user?.is_staff && (
+            <NavLink
               to="/staff/agent-observability"
               className={({ isActive }) =>
                 cn(
@@ -165,6 +178,13 @@ export function Navbar() {
               </Button>
             </Link>
           )}
+          {isAuthenticated && user?.is_staff && (
+            <Link to="/staff/agent-evaluation" className="md:hidden">
+              <Button variant="ghost" size="icon" aria-label="Agent 评测" title="Agent 评测">
+                <ClipboardCheck className="h-4.5 w-4.5" />
+              </Button>
+            </Link>
+          )}
 
           <Link to="/cart" className="relative">
             <Button variant="ghost" size="icon" aria-label="购物车">
@@ -218,6 +238,15 @@ export function Navbar() {
                 className="rounded-md px-3 py-2.5 text-sm font-medium text-ink-muted hover:bg-white/[0.04] hover:text-ink"
               >
                 客服工作台
+              </NavLink>
+            )}
+            {isAuthenticated && user?.is_staff && (
+              <NavLink
+                to="/staff/agent-evaluation"
+                onClick={() => setMobileOpen(false)}
+                className="rounded-md px-3 py-2.5 text-sm font-medium text-ink-muted hover:bg-white/[0.04] hover:text-ink"
+              >
+                Agent 评测
               </NavLink>
             )}
             {isAuthenticated && user?.is_staff && (

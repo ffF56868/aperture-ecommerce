@@ -521,6 +521,112 @@ class AgentRunEvent(UUIDPrimaryKeyMixin, TimeStampedMixin):
         return f"{self.run_id} - {self.name}"
 
 
+class AgentEvaluationRun(UUIDPrimaryKeyMixin, TimeStampedMixin):
+    """One persisted deterministic evaluation batch for the staff dashboard."""
+
+    class Status(models.TextChoices):
+        RUNNING = "RUNNING", "执行中"
+        SUCCEEDED = "SUCCEEDED", "已完成"
+        FAILED = "FAILED", "失败"
+
+    class Trigger(models.TextChoices):
+        DASHBOARD = "DASHBOARD", "后台工作台"
+        COMMAND = "COMMAND", "管理命令"
+
+    status = models.CharField("评测状态", max_length=16, choices=Status.choices, default=Status.RUNNING)
+    trigger = models.CharField("触发方式", max_length=16, choices=Trigger.choices, default=Trigger.DASHBOARD)
+    mode = models.CharField("评测模式", max_length=64, default="deterministic_replay")
+    started_at = models.DateTimeField("开始时间", default=timezone.now)
+    finished_at = models.DateTimeField("结束时间", null=True, blank=True)
+    total_cases = models.PositiveIntegerField("案例总数", default=0)
+    passed_cases = models.PositiveIntegerField("通过案例数", default=0)
+    failed_cases = models.PositiveIntegerField("失败案例数", default=0)
+    intent_correct = models.PositiveIntegerField("意图正确数", default=0)
+    intent_total = models.PositiveIntegerField("意图评测数", default=0)
+    tool_selection_correct = models.PositiveIntegerField("工具选择正确数", default=0)
+    tool_selection_total = models.PositiveIntegerField("工具选择评测数", default=0)
+    parameter_correct = models.PositiveIntegerField("参数正确数", default=0)
+    parameter_total = models.PositiveIntegerField("参数评测数", default=0)
+    unauthorized_blocked = models.PositiveIntegerField("越权拦截数", default=0)
+    unauthorized_total = models.PositiveIntegerField("越权案例数", default=0)
+    dangerous_blocked = models.PositiveIntegerField("危险操作拦截数", default=0)
+    dangerous_total = models.PositiveIntegerField("危险操作案例数", default=0)
+    human_escalated = models.PositiveIntegerField("人工转接数", default=0)
+    human_escalation_total = models.PositiveIntegerField("人工转接评测数", default=0)
+    failure_total = models.PositiveIntegerField("运行失败数", default=0)
+    average_response_ms = models.PositiveIntegerField("平均响应时间（毫秒）", default=0)
+    report = models.JSONField("完整评测报告", default=dict, blank=True)
+    error_message = models.CharField("错误说明", max_length=255, blank=True)
+
+    class Meta:
+        verbose_name = "Agent 评测批次"
+        verbose_name_plural = "Agent 评测批次"
+        ordering = ("-started_at",)
+        indexes = [
+            models.Index(fields=["status", "started_at"]),
+            models.Index(fields=["trigger", "started_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.started_at:%Y-%m-%d %H:%M} - {self.get_status_display()}"
+
+
+class AgentEvaluationCaseResult(UUIDPrimaryKeyMixin, TimeStampedMixin):
+    """A durable, explainable result for one case in an evaluation batch."""
+
+    evaluation_run = models.ForeignKey(
+        AgentEvaluationRun,
+        verbose_name="评测批次",
+        on_delete=models.CASCADE,
+        related_name="case_results",
+    )
+    case_id = models.CharField("案例 ID", max_length=32)
+    category = models.CharField("案例类别", max_length=64)
+    description = models.CharField("案例说明", max_length=255)
+    message = models.TextField("测试输入")
+    expected_intent = models.CharField("期望意图", max_length=64)
+    actual_intent = models.CharField("实际意图", max_length=64, blank=True)
+    expected_tools = models.JSONField("期望工具", default=list, blank=True)
+    actual_tools = models.JSONField("实际工具", default=list, blank=True)
+    expected_arguments = models.JSONField("期望参数", default=list, blank=True)
+    actual_arguments = models.JSONField("实际参数", default=list, blank=True)
+    passed = models.BooleanField("案例通过", default=False)
+    intent_passed = models.BooleanField("意图正确", default=False)
+    tool_selection_passed = models.BooleanField("工具选择正确", default=False)
+    parameter_applicable = models.BooleanField("参数可评测", default=False)
+    parameter_passed = models.BooleanField("参数正确", null=True, blank=True)
+    authorization_passed = models.BooleanField("权限断言通过", default=False)
+    unauthorized_case = models.BooleanField("越权案例", default=False)
+    unauthorized_blocked = models.BooleanField("越权已拦截", default=False)
+    dangerous_case = models.BooleanField("危险操作案例", default=False)
+    dangerous_blocked = models.BooleanField("危险操作已拦截", default=False)
+    response_compliance_passed = models.BooleanField("回复合规", default=False)
+    human_escalated = models.BooleanField("已转人工", default=False)
+    failed = models.BooleanField("运行失败", default=False)
+    response_time_ms = models.PositiveIntegerField("响应时间（毫秒）", default=0)
+    actual_error_codes = models.JSONField("实际错误代码", default=list, blank=True)
+    assistant_message = models.TextField("助手回复", blank=True)
+    failures = models.JSONField("失败说明", default=list, blank=True)
+
+    class Meta:
+        verbose_name = "Agent 评测案例结果"
+        verbose_name_plural = "Agent 评测案例结果"
+        ordering = ("case_id",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("evaluation_run", "case_id"),
+                name="after_sales_unique_eval_run_case",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["evaluation_run", "passed"]),
+            models.Index(fields=["category", "case_id"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.evaluation_run_id} - {self.case_id}"
+
+
 class ToolExecution(UUIDPrimaryKeyMixin, TimeStampedMixin):
     """Append-only audit data for every registered Agent tool invocation."""
 
