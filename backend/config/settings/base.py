@@ -258,6 +258,15 @@ OPENAI_EMBEDDING_DIMENSIONS = config("OPENAI_EMBEDDING_DIMENSIONS", default=1536
 AFTER_SALES_RAG_MAX_COSINE_DISTANCE = config(
     "AFTER_SALES_RAG_MAX_COSINE_DISTANCE", default=0.55, cast=float
 )
+AFTER_SALES_VECTOR_BACKEND = config("AFTER_SALES_VECTOR_BACKEND", default="postgres")
+AFTER_SALES_ALLOW_POSTGRES_FALLBACK = config(
+    "AFTER_SALES_ALLOW_POSTGRES_FALLBACK", default=True, cast=bool
+)
+MILVUS_URI = config("MILVUS_URI", default="http://milvus:19530")
+MILVUS_TOKEN = config("MILVUS_TOKEN", default="")
+MILVUS_COLLECTION = config("MILVUS_COLLECTION", default="after_sales_knowledge")
+MILVUS_TIMEOUT_SECONDS = config("MILVUS_TIMEOUT_SECONDS", default=10, cast=int)
+KNOWLEDGE_WEB_TIMEOUT_SECONDS = config("KNOWLEDGE_WEB_TIMEOUT_SECONDS", default=15, cast=int)
 
 # ---------------------------------------------------------------------------
 # Logging

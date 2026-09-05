@@ -349,3 +349,62 @@ class AgentEvaluationRunDetailSerializer(AgentEvaluationRunListItemSerializer):
     metrics = serializers.DictField(child=AgentEvaluationMetricSerializer())
     cases = AgentEvaluationCaseResultSerializer(many=True)
     error_message = serializers.CharField()
+
+
+class NullableIntegerField(serializers.IntegerField):
+    """Accept an empty multipart value as null when clearing a document scope."""
+
+    def to_internal_value(self, data):
+        if data in ("", "null"):
+            return None
+        return super().to_internal_value(data)
+
+
+class StaffKnowledgeDocumentWriteSerializer(serializers.Serializer):
+    title = serializers.CharField(max_length=160, required=False)
+    slug = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    category = serializers.CharField(max_length=64, required=False)
+    source_label = serializers.CharField(max_length=160, required=False, allow_blank=True)
+    content = serializers.CharField(required=False, allow_blank=True)
+    source_url = serializers.URLField(max_length=1000, required=False, allow_blank=True)
+    product_id = NullableIntegerField(required=False, allow_null=True)
+    product_category_id = NullableIntegerField(required=False, allow_null=True)
+    is_published = serializers.BooleanField(required=False)
+    file = serializers.FileField(required=False, allow_null=True)
+
+
+class StaffKnowledgeSearchSerializer(serializers.Serializer):
+    question = serializers.CharField(min_length=2, max_length=500, trim_whitespace=True)
+    limit = serializers.IntegerField(required=False, min_value=1, max_value=8, default=3)
+    product_id = NullableIntegerField(required=False, allow_null=True)
+    category_id = NullableIntegerField(required=False, allow_null=True)
+
+
+class StaffKnowledgeDocumentSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    title = serializers.CharField()
+    slug = serializers.CharField()
+    category = serializers.CharField()
+    source_label = serializers.CharField()
+    source_type = serializers.CharField()
+    source_type_label = serializers.CharField()
+    source_url = serializers.CharField(allow_blank=True)
+    file_name = serializers.CharField(allow_blank=True)
+    file_url = serializers.CharField(allow_null=True)
+    content_preview = serializers.CharField()
+    product = serializers.DictField(allow_null=True)
+    product_category = serializers.DictField(allow_null=True)
+    is_published = serializers.BooleanField()
+    index_status = serializers.CharField()
+    index_status_label = serializers.CharField()
+    index_error = serializers.CharField()
+    chunk_count = serializers.IntegerField()
+    indexed_at = serializers.DateTimeField(allow_null=True)
+    uploaded_by = serializers.DictField(allow_null=True)
+    created_at = serializers.DateTimeField()
+    updated_at = serializers.DateTimeField()
+
+
+class StaffKnowledgeDocumentListResponseSerializer(serializers.Serializer):
+    summary = serializers.DictField()
+    documents = StaffKnowledgeDocumentSerializer(many=True)

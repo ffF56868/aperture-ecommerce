@@ -78,6 +78,8 @@ class CreateAfterSalesCaseArgumentsSerializer(StrictToolArgumentsSerializer):
 
 class KnowledgeSearchArgumentsSerializer(StrictToolArgumentsSerializer):
     question = serializers.CharField(min_length=2, max_length=500, trim_whitespace=True)
+    product_id = serializers.IntegerField(allow_null=True, required=False)
+    category_id = serializers.IntegerField(allow_null=True, required=False)
 
 
 @dataclass(frozen=True)
@@ -202,9 +204,17 @@ KNOWLEDGE_SEARCH_SCHEMA = {
             "minLength": 2,
             "maxLength": 500,
             "description": "需要查询的售后知识问题，不应包含订单号、手机号等个人信息。",
-        }
+        },
+        "product_id": {
+            "type": ["integer", "null"],
+            "description": "可选，按具体商品匹配专属售后规则。",
+        },
+        "category_id": {
+            "type": ["integer", "null"],
+            "description": "可选，按商品分类匹配专属售后规则。",
+        },
     },
-    "required": ["question"],
+    "required": ["question", "product_id", "category_id"],
     "additionalProperties": False,
 }
 
@@ -223,6 +233,8 @@ def _serialize_order(order: Order) -> dict[str, Any]:
         "created_at": order.created_at.isoformat(),
         "items": [
             {
+                "product_id": item.product_id,
+                "product_category_id": item.product.category_id if item.product_id else None,
                 "product_name": item.product_name,
                 "quantity": item.quantity,
                 "unit_price": str(item.unit_price),
@@ -236,7 +248,7 @@ def _list_my_orders(context: ToolContext, arguments: dict[str, Any]) -> dict[str
     orders = (
         Order.objects.filter(user=context.user)
         .select_related("payment")
-        .prefetch_related("items")
+        .prefetch_related("items__product")
         .order_by("-created_at")[:10]
     )
     return {"orders": [_serialize_order(order) for order in orders]}
@@ -247,7 +259,7 @@ def _get_my_order_detail(context: ToolContext, arguments: dict[str, Any]) -> dic
         order = (
             Order.objects.filter(user=context.user)
             .select_related("payment")
-            .prefetch_related("items")
+            .prefetch_related("items__product")
             .get(id=arguments["order_id"])
         )
     except Order.DoesNotExist as exc:
@@ -325,7 +337,11 @@ def _search_after_sales_knowledge(
     """Retrieve only trusted, static support knowledge; it never reads customer data."""
 
     try:
-        result = search_after_sales_knowledge(arguments["question"])
+        result = search_after_sales_knowledge(
+            arguments["question"],
+            product_id=arguments.get("product_id"),
+            category_id=arguments.get("category_id"),
+        )
     except KnowledgeBaseError as exc:
         raise ToolError("KNOWLEDGE_BASE_UNAVAILABLE", "售后知识库暂时不可用，请转人工处理。") from exc
     return {

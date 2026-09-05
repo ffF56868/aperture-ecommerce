@@ -125,11 +125,22 @@ class CustomerMemoryAdmin(admin.ModelAdmin):
 
 @admin.register(KnowledgeDocument)
 class KnowledgeDocumentAdmin(admin.ModelAdmin):
-    list_display = ("title", "category", "source_label", "is_published", "updated_at")
-    list_filter = ("category", "is_published")
-    search_fields = ("title", "source_label", "content")
+    list_display = (
+        "title",
+        "category",
+        "source_type",
+        "product",
+        "product_category",
+        "index_status",
+        "chunk_count",
+        "is_published",
+        "updated_at",
+    )
+    list_filter = ("category", "source_type", "index_status", "is_published")
+    search_fields = ("title", "source_label", "content", "source_url", "product__name")
     prepopulated_fields = {"slug": ("title",)}
-    readonly_fields = ("id", "created_at", "updated_at")
+    autocomplete_fields = ("product", "product_category", "uploaded_by")
+    readonly_fields = ("id", "created_at", "updated_at", "indexed_at", "chunk_count", "index_status", "index_error")
     inlines = (KnowledgeChunkInline,)
 
 

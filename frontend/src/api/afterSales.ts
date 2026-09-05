@@ -8,6 +8,9 @@ import type {
   AgentEvaluationRunListResponse,
   AgentRunDetail,
   AgentRunListResponse,
+  StaffKnowledgeDocument,
+  StaffKnowledgeDocumentListResponse,
+  StaffKnowledgeSearchResponse,
   ConfirmationExecutionResponse,
   ConfirmationRejectionResponse,
   SendAgentMessageResponse,
@@ -153,6 +156,54 @@ export const afterSalesApi = {
       "/after-sales/staff/agent-evaluations/run/",
     );
     return data;
+  },
+
+  listStaffKnowledgeDocuments: async (params: { status?: string; search?: string } = {}): Promise<StaffKnowledgeDocumentListResponse> => {
+    const { data } = await apiClient.get<StaffKnowledgeDocumentListResponse>(
+      "/after-sales/staff/knowledge-documents/",
+      { params },
+    );
+    return data;
+  },
+
+  searchStaffKnowledge: async (payload: {
+    question: string;
+    limit?: number;
+    product_id?: number | null;
+    category_id?: number | null;
+  }): Promise<StaffKnowledgeSearchResponse> => {
+    const { data } = await apiClient.post<StaffKnowledgeSearchResponse>(
+      "/after-sales/staff/knowledge-documents/search/",
+      payload,
+    );
+    return data;
+  },
+
+  createStaffKnowledgeDocument: async (payload: FormData): Promise<StaffKnowledgeDocument> => {
+    const { data } = await apiClient.post<StaffKnowledgeDocument>(
+      "/after-sales/staff/knowledge-documents/",
+      payload,
+    );
+    return data;
+  },
+
+  updateStaffKnowledgeDocument: async (documentId: string, payload: FormData | Record<string, unknown>): Promise<StaffKnowledgeDocument> => {
+    const { data } = await apiClient.patch<StaffKnowledgeDocument>(
+      `/after-sales/staff/knowledge-documents/${documentId}/`,
+      payload,
+    );
+    return data;
+  },
+
+  reindexStaffKnowledgeDocument: async (documentId: string): Promise<StaffKnowledgeDocument> => {
+    const { data } = await apiClient.post<StaffKnowledgeDocument>(
+      `/after-sales/staff/knowledge-documents/${documentId}/reindex/`,
+    );
+    return data;
+  },
+
+  deleteStaffKnowledgeDocument: async (documentId: string): Promise<void> => {
+    await apiClient.delete(`/after-sales/staff/knowledge-documents/${documentId}/`);
   },
 
   confirmConfirmation: async (confirmationId: string): Promise<ConfirmationExecutionResponse> => {

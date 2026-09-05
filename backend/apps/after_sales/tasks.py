@@ -5,9 +5,28 @@ import logging
 from celery import shared_task
 from django.utils import timezone
 
-from .models import AfterSalesNotification
+from .knowledge import KnowledgeBaseError, index_document
+from .models import AfterSalesNotification, KnowledgeDocument
 
 logger = logging.getLogger(__name__)
+
+
+@shared_task(bind=True, max_retries=2, default_retry_delay=15)
+def index_after_sales_knowledge_document(self, document_id: str, force: bool = False):
+    """Build embeddings off the request thread and persist the indexing state."""
+
+    try:
+        document = KnowledgeDocument.objects.get(id=document_id)
+    except KnowledgeDocument.DoesNotExist:
+        return {"status": "missing", "document_id": document_id}
+    try:
+        chunks_indexed = index_document(document, force=force)
+    except KnowledgeBaseError as exc:
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc) from exc
+        logger.exception("Knowledge indexing failed for %s", document_id)
+        return {"status": "failed", "document_id": document_id, "error": str(exc)}
+    return {"status": "ready", "document_id": document_id, "chunks_indexed": chunks_indexed}
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=10)

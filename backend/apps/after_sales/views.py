@@ -1,17 +1,23 @@
 """API endpoints for after-sales rules and the controlled Agent conversation."""
 
 import logging
+import uuid
 
+from django.db import transaction
 from django.db.models import Avg, Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.text import slugify
 from drf_spectacular.utils import extend_schema
+from rest_framework import serializers
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.exceptions import NotFound
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.cart_orders.models import Order
+from apps.products.models import Category, Product
 
 from .agent_service import (
     AfterSalesAgentUnavailableError,
@@ -30,6 +36,7 @@ from .models import (
     AgentRun,
     AgentRunEvent,
     ToolExecution,
+    KnowledgeDocument,
 )
 from .openai_client import OpenAIConfigurationError
 from .policies import AFTER_SALES_POLICIES, get_policy
@@ -49,6 +56,10 @@ from .serializers import (
     AgentRunListResponseSerializer,
     AgentEvaluationRunDetailSerializer,
     AgentEvaluationRunListResponseSerializer,
+    StaffKnowledgeDocumentListResponseSerializer,
+    StaffKnowledgeDocumentSerializer,
+    StaffKnowledgeDocumentWriteSerializer,
+    StaffKnowledgeSearchSerializer,
     ConfirmationExecutionSerializer,
     ConfirmationRejectionSerializer,
     ConversationMessageRequestSerializer,
@@ -75,6 +86,10 @@ from .notifications import (
     mark_notification_read,
     serialize_notification,
 )
+from .knowledge import KnowledgeBaseError, search_after_sales_knowledge
+from .knowledge_ingest import KnowledgeIngestError, extract_uploaded_file, extract_webpage, source_type_for
+from .tasks import index_after_sales_knowledge_document
+from .vector_store import MilvusUnavailable, delete_document_vectors
 
 logger = logging.getLogger(__name__)
 
@@ -615,6 +630,312 @@ class StaffAgentEvaluationRunView(APIView):
             AgentEvaluationRun.objects.prefetch_related("case_results"), id=report.evaluation_run_id
         )
         return Response(_serialize_evaluation_run_detail(evaluation_run), status=201)
+
+
+def _serialize_knowledge_document(document):
+    file_url = None
+    file_name = ""
+    if document.file:
+        file_name = document.file.name.rsplit("/", 1)[-1]
+        try:
+            file_url = document.file.url
+        except ValueError:
+            file_url = None
+    product = (
+        {"id": str(document.product_id), "name": document.product.name}
+        if document.product_id and document.product
+        else None
+    )
+    product_category = (
+        {"id": str(document.product_category_id), "name": document.product_category.name}
+        if document.product_category_id and document.product_category
+        else None
+    )
+    uploaded_by = (
+        {"id": document.uploaded_by_id, "username": document.uploaded_by.username}
+        if document.uploaded_by_id and document.uploaded_by
+        else None
+    )
+    return {
+        "id": document.id,
+        "title": document.title,
+        "slug": document.slug,
+        "category": document.category,
+        "source_label": document.source_label,
+        "source_type": document.source_type,
+        "source_type_label": document.get_source_type_display(),
+        "source_url": document.source_url,
+        "file_name": file_name,
+        "file_url": file_url,
+        "content_preview": document.content[:320],
+        "product": product,
+        "product_category": product_category,
+        "is_published": document.is_published,
+        "index_status": document.index_status,
+        "index_status_label": document.get_index_status_display(),
+        "index_error": document.index_error,
+        "chunk_count": document.chunk_count,
+        "indexed_at": document.indexed_at,
+        "uploaded_by": uploaded_by,
+        "created_at": document.created_at,
+        "updated_at": document.updated_at,
+    }
+
+
+def _queue_knowledge_index(document, *, force: bool = False) -> None:
+    document.index_status = document.IndexStatus.PENDING
+    document.index_error = ""
+    document.save(update_fields=["index_status", "index_error", "updated_at"])
+
+    def dispatch() -> None:
+        try:
+            index_after_sales_knowledge_document.delay(str(document.id), force=force)
+        except Exception as exc:  # pragma: no cover - depends on broker availability
+            logger.exception("Could not queue knowledge indexing for %s", document.id)
+            KnowledgeDocument.objects.filter(id=document.id).update(
+                index_status=KnowledgeDocument.IndexStatus.FAILED,
+                index_error="索引任务暂时无法排队，请检查 Celery 和 Redis。",
+                updated_at=timezone.now(),
+            )
+
+    transaction.on_commit(dispatch)
+
+
+def _knowledge_scope_objects(validated_data):
+    product_id = validated_data.pop("product_id", None)
+    category_id = validated_data.pop("product_category_id", None)
+    product = Product.objects.filter(id=product_id).first() if product_id else None
+    category = Category.objects.filter(id=category_id).first() if category_id else None
+    if product_id and product is None:
+        raise ValueError("适用商品不存在。")
+    if category_id and category is None:
+        raise ValueError("适用商品分类不存在。")
+    return product, category
+
+
+@extend_schema(
+    summary="管理员：管理售后知识文档",
+    tags=["售后知识库"],
+    request=StaffKnowledgeDocumentWriteSerializer,
+    responses=StaffKnowledgeDocumentListResponseSerializer,
+)
+class StaffKnowledgeDocumentListView(APIView):
+    permission_classes = (IsAdminUser,)
+    parser_classes = (MultiPartParser, FormParser, JSONParser)
+
+    def get(self, request, *args, **kwargs):
+        queryset = KnowledgeDocument.objects.select_related(
+            "product", "product_category", "uploaded_by"
+        ).order_by("category", "title")
+        status = request.query_params.get("status")
+        search = (request.query_params.get("search") or "").strip()[:100]
+        if status:
+            if status not in {value for value, _ in KnowledgeDocument.IndexStatus.choices}:
+                return Response({"detail": "索引状态筛选条件无效。"}, status=400)
+            queryset = queryset.filter(index_status=status)
+        if search:
+            queryset = queryset.filter(
+                Q(title__icontains=search)
+                | Q(source_label__icontains=search)
+                | Q(category__icontains=search)
+                | Q(content__icontains=search)
+            )
+        return Response(
+            {
+                "summary": {
+                    "total": queryset.count(),
+                    "ready": queryset.filter(index_status=KnowledgeDocument.IndexStatus.READY).count(),
+                    "pending": queryset.filter(index_status=KnowledgeDocument.IndexStatus.PENDING).count(),
+                    "processing": queryset.filter(index_status=KnowledgeDocument.IndexStatus.PROCESSING).count(),
+                    "failed": queryset.filter(index_status=KnowledgeDocument.IndexStatus.FAILED).count(),
+                },
+                "documents": [_serialize_knowledge_document(item) for item in queryset],
+            }
+        )
+
+    def post(self, request, *args, **kwargs):
+        serializer = StaffKnowledgeDocumentWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = dict(serializer.validated_data)
+        uploaded_file = data.pop("file", None) or request.FILES.get("file")
+        source_url = data.get("source_url", "")
+        raw_content = data.get("content", "")
+        try:
+            source_type = source_type_for(
+                uploaded_file=uploaded_file, source_url=source_url, content=raw_content
+            )
+            page_title = ""
+            if uploaded_file is not None:
+                content, _ = extract_uploaded_file(uploaded_file)
+            elif source_url:
+                content, page_title = extract_webpage(source_url)
+            else:
+                content = raw_content.strip()
+            product, product_category = _knowledge_scope_objects(data)
+        except (KnowledgeIngestError, ValueError) as exc:
+            return Response({"detail": str(exc)}, status=400)
+        title = (data.get("title") or page_title or getattr(uploaded_file, "name", "")).strip()
+        if not title:
+            return Response({"detail": "请填写文档标题。"}, status=400)
+        slug = (data.get("slug") or slugify(title, allow_unicode=True)).strip()[:100]
+        if not slug:
+            slug = f"knowledge-{uuid.uuid4().hex[:12]}"
+        if KnowledgeDocument.objects.filter(slug=slug).exists():
+            slug = f"{slug[:86]}-{uuid.uuid4().hex[:12]}"
+        document = KnowledgeDocument.objects.create(
+            title=title,
+            slug=slug,
+            category=data.get("category", "售后规则"),
+            source_label=data.get("source_label") or title,
+            content=content,
+            source_type=source_type,
+            file=uploaded_file,
+            source_url=source_url,
+            product=product,
+            product_category=product_category,
+            is_published=data.get("is_published", True),
+            uploaded_by=request.user,
+            index_status=KnowledgeDocument.IndexStatus.PENDING,
+        )
+        _queue_knowledge_index(document)
+        document = KnowledgeDocument.objects.select_related(
+            "product", "product_category", "uploaded_by"
+        ).get(id=document.id)
+        return Response(_serialize_knowledge_document(document), status=202)
+
+
+@extend_schema(
+    summary="管理员：更新售后知识文档",
+    tags=["售后知识库"],
+    request=StaffKnowledgeDocumentWriteSerializer,
+    responses=StaffKnowledgeDocumentSerializer,
+)
+class StaffKnowledgeDocumentDetailView(APIView):
+    permission_classes = (IsAdminUser,)
+    parser_classes = (MultiPartParser, FormParser, JSONParser)
+
+    def get(self, request, document_id, *args, **kwargs):
+        document = get_object_or_404(
+            KnowledgeDocument.objects.select_related("product", "product_category", "uploaded_by"),
+            id=document_id,
+        )
+        return Response(_serialize_knowledge_document(document))
+
+    def patch(self, request, document_id, *args, **kwargs):
+        document = get_object_or_404(KnowledgeDocument, id=document_id)
+        serializer = StaffKnowledgeDocumentWriteSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        data = dict(serializer.validated_data)
+        uploaded_file = data.pop("file", None) or request.FILES.get("file")
+        content_changed = any(key in data for key in ("content", "source_url", "product_id", "product_category_id"))
+        try:
+            if uploaded_file is not None:
+                document.content, _ = extract_uploaded_file(uploaded_file)
+                if document.file:
+                    document.file.delete(save=False)
+                document.file = uploaded_file
+                document.source_url = ""
+                document.source_type = KnowledgeDocument.SourceType.FILE
+                content_changed = True
+            elif "source_url" in data and data["source_url"]:
+                document.content, page_title = extract_webpage(data["source_url"])
+                if document.file:
+                    document.file.delete(save=False)
+                document.file = None
+                document.source_type = KnowledgeDocument.SourceType.WEBPAGE
+                if "title" not in data and page_title:
+                    document.title = page_title
+                content_changed = True
+            elif "content" in data:
+                document.content = data["content"].strip()
+                if document.file:
+                    document.file.delete(save=False)
+                document.file = None
+                document.source_url = ""
+                document.source_type = KnowledgeDocument.SourceType.TEXT
+            if "source_url" in data:
+                document.source_url = data["source_url"]
+            product, product_category = _knowledge_scope_objects(data)
+            if "product_id" in serializer.validated_data:
+                document.product = product
+            if "product_category_id" in serializer.validated_data:
+                document.product_category = product_category
+        except (KnowledgeIngestError, ValueError) as exc:
+            return Response({"detail": str(exc)}, status=400)
+        for field in ("title", "category", "source_label", "slug", "is_published"):
+            if field in data:
+                setattr(document, field, data[field])
+        if "source_label" in data and not document.source_label:
+            document.source_label = document.title
+        if not document.title.strip() or not document.content.strip():
+            return Response({"detail": "标题和知识内容不能为空。"}, status=400)
+        document.save()
+        if content_changed:
+            _queue_knowledge_index(document, force=True)
+        document = KnowledgeDocument.objects.select_related("product", "product_category", "uploaded_by").get(id=document.id)
+        return Response(_serialize_knowledge_document(document))
+
+    def delete(self, request, document_id, *args, **kwargs):
+        document = get_object_or_404(KnowledgeDocument, id=document_id)
+        try:
+            if settings.AFTER_SALES_VECTOR_BACKEND.lower() == "milvus":
+                delete_document_vectors(str(document.id))
+        except MilvusUnavailable:
+            logger.warning("Milvus old vectors could not be removed for %s", document.id)
+        if document.file:
+            document.file.delete(save=False)
+        document.delete()
+        return Response(status=204)
+
+
+@extend_schema(
+    summary="管理员：重建售后知识文档索引",
+    tags=["售后知识库"],
+    request=None,
+    responses=StaffKnowledgeDocumentSerializer,
+)
+class StaffKnowledgeDocumentReindexView(APIView):
+    permission_classes = (IsAdminUser,)
+
+    def post(self, request, document_id, *args, **kwargs):
+        document = get_object_or_404(KnowledgeDocument, id=document_id)
+        _queue_knowledge_index(document, force=True)
+        document.refresh_from_db()
+        return Response(_serialize_knowledge_document(document), status=202)
+
+
+@extend_schema(
+    summary="管理员：测试售后知识检索",
+    tags=["售后知识库"],
+    request=StaffKnowledgeSearchSerializer,
+    responses=serializers.DictField(),
+)
+class StaffKnowledgeSearchView(APIView):
+    """Let staff verify retrieval and citations without exposing this to customers."""
+
+    permission_classes = (IsAdminUser,)
+
+    def post(self, request, *args, **kwargs):
+        serializer = StaffKnowledgeSearchSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            result = search_after_sales_knowledge(
+                data["question"],
+                limit=data.get("limit", 3),
+                product_id=str(data["product_id"]) if data.get("product_id") else None,
+                category_id=str(data["category_id"]) if data.get("category_id") else None,
+            )
+        except KnowledgeBaseError as exc:
+            return Response({"detail": str(exc)}, status=503)
+        return Response(
+            {
+                "question": data["question"],
+                "matches": result.matches,
+                "requires_human_escalation": result.requires_human_escalation,
+                "message": result.message,
+            }
+        )
 
 
 @extend_schema(

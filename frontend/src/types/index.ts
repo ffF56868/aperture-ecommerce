@@ -451,3 +451,56 @@ export interface AgentEvaluationRunDetail extends AgentEvaluationRunListItem {
   cases: AgentEvaluationCaseResult[];
   error_message: string;
 }
+
+export type KnowledgeDocumentSourceType = "TEXT" | "FILE" | "WEBPAGE";
+export type KnowledgeDocumentIndexStatus = "PENDING" | "PROCESSING" | "READY" | "FAILED";
+
+export interface StaffKnowledgeDocument {
+  id: string;
+  title: string;
+  slug: string;
+  category: string;
+  source_label: string;
+  source_type: KnowledgeDocumentSourceType;
+  source_type_label: string;
+  source_url: string;
+  file_name: string;
+  file_url: string | null;
+  content_preview: string;
+  product: { id: string; name: string } | null;
+  product_category: { id: string; name: string } | null;
+  is_published: boolean;
+  index_status: KnowledgeDocumentIndexStatus;
+  index_status_label: string;
+  index_error: string;
+  chunk_count: number;
+  indexed_at: string | null;
+  uploaded_by: { id: number; username: string } | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StaffKnowledgeDocumentListResponse {
+  summary: { total: number; ready: number; pending: number; processing: number; failed: number };
+  documents: StaffKnowledgeDocument[];
+}
+
+export interface StaffKnowledgeMatch {
+  document_id: string;
+  chunk_id: string;
+  title: string;
+  source_label: string;
+  source_type: KnowledgeDocumentSourceType;
+  source_url: string;
+  category: string;
+  excerpt: string;
+  similarity: number;
+  sequence: number;
+}
+
+export interface StaffKnowledgeSearchResponse {
+  question: string;
+  matches: StaffKnowledgeMatch[];
+  requires_human_escalation: boolean;
+  message: string;
+}

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { Activity, Bell, BriefcaseBusiness, ClipboardCheck, Menu, MessageCircleMore, Search, ShoppingBag, User, X } from "lucide-react";
+import { Activity, Bell, BookOpen, BriefcaseBusiness, ClipboardCheck, Menu, MessageCircleMore, Search, ShoppingBag, User, X } from "lucide-react";
 import { Container } from "@/components/ui/Container";
 import { Button } from "@/components/ui/Button";
 import { BRAND, NAV_LINKS } from "@/constants";
@@ -115,6 +115,19 @@ export function Navbar() {
               Agent 观测
             </NavLink>
           )}
+          {isAuthenticated && user?.is_staff && (
+            <NavLink
+              to="/staff/knowledge-base"
+              className={({ isActive }) =>
+                cn(
+                  "rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                  isActive ? "text-ink" : "text-ink-muted hover:text-ink",
+                )
+              }
+            >
+              RAG 知识库
+            </NavLink>
+          )}
         </nav>
 
         <div className="flex items-center gap-1.5">
@@ -182,6 +195,13 @@ export function Navbar() {
             <Link to="/staff/agent-evaluation" className="md:hidden">
               <Button variant="ghost" size="icon" aria-label="Agent 评测" title="Agent 评测">
                 <ClipboardCheck className="h-4.5 w-4.5" />
+              </Button>
+            </Link>
+          )}
+          {isAuthenticated && user?.is_staff && (
+            <Link to="/staff/knowledge-base" className="md:hidden">
+              <Button variant="ghost" size="icon" aria-label="RAG 知识库" title="RAG 知识库">
+                <BookOpen className="h-4.5 w-4.5" />
               </Button>
             </Link>
           )}
@@ -256,6 +276,15 @@ export function Navbar() {
                 className="rounded-md px-3 py-2.5 text-sm font-medium text-ink-muted hover:bg-white/[0.04] hover:text-ink"
               >
                 Agent 观测
+              </NavLink>
+            )}
+            {isAuthenticated && user?.is_staff && (
+              <NavLink
+                to="/staff/knowledge-base"
+                onClick={() => setMobileOpen(false)}
+                className="rounded-md px-3 py-2.5 text-sm font-medium text-ink-muted hover:bg-white/[0.04] hover:text-ink"
+              >
+                RAG 知识库
               </NavLink>
             )}
           </Container>

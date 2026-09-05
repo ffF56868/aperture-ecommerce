@@ -22,6 +22,10 @@ from .views import (
     StaffAgentEvaluationDetailView,
     StaffAgentEvaluationListView,
     StaffAgentEvaluationRunView,
+    StaffKnowledgeDocumentDetailView,
+    StaffKnowledgeDocumentListView,
+    StaffKnowledgeDocumentReindexView,
+    StaffKnowledgeSearchView,
     StaffOrderListView,
     StaffOrderShipView,
 )
@@ -75,6 +79,26 @@ urlpatterns = [
     ),
     path("staff/agent-evaluations/", StaffAgentEvaluationListView.as_view(), name="staff-agent-evaluation-list"),
     path("staff/agent-evaluations/run/", StaffAgentEvaluationRunView.as_view(), name="staff-agent-evaluation-run"),
+    path(
+        "staff/knowledge-documents/",
+        StaffKnowledgeDocumentListView.as_view(),
+        name="staff-knowledge-document-list",
+    ),
+    path(
+        "staff/knowledge-documents/<uuid:document_id>/",
+        StaffKnowledgeDocumentDetailView.as_view(),
+        name="staff-knowledge-document-detail",
+    ),
+    path(
+        "staff/knowledge-documents/<uuid:document_id>/reindex/",
+        StaffKnowledgeDocumentReindexView.as_view(),
+        name="staff-knowledge-document-reindex",
+    ),
+    path(
+        "staff/knowledge-documents/search/",
+        StaffKnowledgeSearchView.as_view(),
+        name="staff-knowledge-document-search",
+    ),
     path(
         "staff/agent-evaluations/<uuid:evaluation_run_id>/",
         StaffAgentEvaluationDetailView.as_view(),

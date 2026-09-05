@@ -356,17 +356,77 @@ class CustomerMemory(TimeStampedMixin):
 class KnowledgeDocument(UUIDPrimaryKeyMixin, TimeStampedMixin):
     """Trusted, staff-maintained source documents for after-sales answers."""
 
+    class SourceType(models.TextChoices):
+        TEXT = "TEXT", "文本"
+        FILE = "FILE", "文件"
+        WEBPAGE = "WEBPAGE", "网页"
+
+    class IndexStatus(models.TextChoices):
+        PENDING = "PENDING", "待索引"
+        PROCESSING = "PROCESSING", "索引中"
+        READY = "READY", "已就绪"
+        FAILED = "FAILED", "索引失败"
+
     title = models.CharField("标题", max_length=160)
     slug = models.SlugField("稳定标识", max_length=100, unique=True)
     category = models.CharField("分类", max_length=64)
     source_label = models.CharField("引用名称", max_length=160)
     content = models.TextField("知识内容")
     is_published = models.BooleanField("允许 Agent 检索", default=True)
+    source_type = models.CharField(
+        "来源类型", max_length=16, choices=SourceType.choices, default=SourceType.TEXT
+    )
+    file = models.FileField("原始文件", upload_to="after-sales/knowledge/", blank=True, null=True)
+    source_url = models.URLField("网页地址", max_length=1000, blank=True)
+    product = models.ForeignKey(
+        "products.Product",
+        verbose_name="适用商品",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="after_sales_knowledge_documents",
+    )
+    product_category = models.ForeignKey(
+        "products.Category",
+        verbose_name="适用商品分类",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="after_sales_knowledge_documents",
+    )
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="上传人",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="uploaded_knowledge_documents",
+    )
+    index_status = models.CharField(
+        "索引状态", max_length=16, choices=IndexStatus.choices, default=IndexStatus.PENDING
+    )
+    index_error = models.CharField("索引错误", max_length=500, blank=True)
+    indexed_at = models.DateTimeField("索引完成时间", null=True, blank=True)
+    chunk_count = models.PositiveIntegerField("切片数量", default=0)
 
     class Meta:
         verbose_name = "售后知识文档"
         verbose_name_plural = "售后知识文档"
         ordering = ("category", "title")
+        indexes = [
+            models.Index(
+                fields=("index_status", "updated_at"),
+                name="after_sales_kdoc_idx",
+            ),
+            models.Index(
+                fields=("product", "is_published"),
+                name="after_sales_kprod_idx",
+            ),
+            models.Index(
+                fields=("product_category", "is_published"),
+                name="after_sales_kcat_idx",
+            ),
+        ]
 
     def __str__(self) -> str:
         return self.title
@@ -385,6 +445,7 @@ class KnowledgeChunk(UUIDPrimaryKeyMixin, TimeStampedMixin):
     content = models.TextField("切片内容")
     content_hash = models.CharField("内容哈希", max_length=64)
     embedding = VectorField("向量", dimensions=1536, null=True, blank=True)
+    vector_id = models.CharField("向量库 ID", max_length=100, blank=True)
 
     class Meta:
         verbose_name = "售后知识切片"
