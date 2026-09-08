@@ -32,6 +32,7 @@ type ScopeMode = "GLOBAL" | "CATEGORY" | "PRODUCT";
 
 const STATUS_LABEL: Record<string, string> = {
   READY: "已就绪",
+  DEGRADED: "已降级（PostgreSQL）",
   PENDING: "待索引",
   PROCESSING: "索引中",
   FAILED: "索引失败",
@@ -39,6 +40,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 const STATUS_VARIANT: Record<string, "success" | "accent" | "coral" | "danger"> = {
   READY: "success",
+  DEGRADED: "accent",
   PENDING: "accent",
   PROCESSING: "coral",
   FAILED: "danger",
@@ -269,8 +271,8 @@ export function StaffKnowledgeBase() {
       </div>
 
       {data && (
-        <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {[["全部文档", data.summary.total], ["已就绪", data.summary.ready], ["待处理", data.summary.pending], ["索引中", data.summary.processing], ["失败", data.summary.failed]].map(([label, value]) => (
+        <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+          {[["全部文档", data.summary.total], ["已就绪", data.summary.ready], ["降级", data.summary.degraded], ["待处理", data.summary.pending], ["索引中", data.summary.processing], ["失败", data.summary.failed]].map(([label, value]) => (
             <Card key={label as string}><CardContent className="p-4"><p className="text-xs text-ink-muted">{label}</p><p className="mt-2 font-display text-2xl font-semibold text-ink">{value}</p></CardContent></Card>
           ))}
         </div>

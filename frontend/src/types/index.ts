@@ -453,7 +453,7 @@ export interface AgentEvaluationRunDetail extends AgentEvaluationRunListItem {
 }
 
 export type KnowledgeDocumentSourceType = "TEXT" | "FILE" | "WEBPAGE";
-export type KnowledgeDocumentIndexStatus = "PENDING" | "PROCESSING" | "READY" | "FAILED";
+export type KnowledgeDocumentIndexStatus = "PENDING" | "PROCESSING" | "READY" | "DEGRADED" | "FAILED";
 
 export interface StaffKnowledgeDocument {
   id: string;
@@ -481,7 +481,7 @@ export interface StaffKnowledgeDocument {
 }
 
 export interface StaffKnowledgeDocumentListResponse {
-  summary: { total: number; ready: number; pending: number; processing: number; failed: number };
+  summary: { total: number; ready: number; degraded: number; pending: number; processing: number; failed: number };
   documents: StaffKnowledgeDocument[];
 }
 

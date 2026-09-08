@@ -24,6 +24,10 @@ DEFAULT_RESULTS = 3
 MAX_RESULTS = 8
 EMBEDDING_BATCH_SIZE = 64
 logger = logging.getLogger(__name__)
+INDEXABLE_STATUSES = (
+    KnowledgeDocument.IndexStatus.READY,
+    KnowledgeDocument.IndexStatus.DEGRADED,
+)
 
 
 class KnowledgeBaseError(RuntimeError):
@@ -154,7 +158,11 @@ def index_document(document: KnowledgeDocument, *, force: bool = False) -> int:
                     document.save(update_fields=["index_status", "index_error", "updated_at"])
                     raise KnowledgeBaseError(str(exc)) from exc
                 document.index_error = "Milvus 暂不可用，当前保留 PostgreSQL 备用索引。"
-        document.index_status = KnowledgeDocument.IndexStatus.READY
+        document.index_status = (
+            KnowledgeDocument.IndexStatus.DEGRADED
+            if document.index_error
+            else KnowledgeDocument.IndexStatus.READY
+        )
         document.chunk_count = len(existing)
         document.indexed_at = timezone.now()
         document.save(
@@ -186,7 +194,11 @@ def index_document(document: KnowledgeDocument, *, force: bool = False) -> int:
                     raise KnowledgeBaseError(str(exc)) from exc
                 logger.warning("Milvus unavailable while indexing %s; PostgreSQL fallback kept", document.id)
                 document.index_error = "Milvus 暂不可用，当前保留 PostgreSQL 备用索引。"
-        document.index_status = KnowledgeDocument.IndexStatus.READY
+        document.index_status = (
+            KnowledgeDocument.IndexStatus.DEGRADED
+            if document.index_error
+            else KnowledgeDocument.IndexStatus.READY
+        )
         document.chunk_count = len(created_chunks)
         document.indexed_at = timezone.now()
         document.save(
@@ -263,7 +275,7 @@ def _search_postgres(
     query_embedding: list[float], *, limit: int, product_id: str | None, category_id: str | None
 ) -> list[dict[str, Any]]:
     documents = KnowledgeDocument.objects.filter(
-        is_published=True, index_status=KnowledgeDocument.IndexStatus.READY
+        is_published=True, index_status__in=INDEXABLE_STATUSES
     )
     scope_filter = Q(product__isnull=True, product_category__isnull=True)
     category_scope_ids: list[str] = []
@@ -328,7 +340,7 @@ def search_after_sales_knowledge(
         raise KnowledgeBaseError("知识库检索问题过短。")
     if not KnowledgeChunk.objects.filter(
         document__is_published=True,
-        document__index_status=KnowledgeDocument.IndexStatus.READY,
+        document__index_status__in=INDEXABLE_STATUSES,
         embedding__isnull=False,
     ).exists():
         return KnowledgeSearchResult(

@@ -365,6 +365,7 @@ class KnowledgeDocument(UUIDPrimaryKeyMixin, TimeStampedMixin):
         PENDING = "PENDING", "待索引"
         PROCESSING = "PROCESSING", "索引中"
         READY = "READY", "已就绪"
+        DEGRADED = "DEGRADED", "已降级（PostgreSQL）"
         FAILED = "FAILED", "索引失败"
 
     title = models.CharField("标题", max_length=160)

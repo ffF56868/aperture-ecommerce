@@ -1,9 +1,15 @@
 from unittest.mock import patch
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
-from apps.after_sales.knowledge import KnowledgeSearchResult, split_knowledge_content, upsert_seed_documents
+from apps.after_sales.knowledge import (
+    KnowledgeSearchResult,
+    index_document,
+    split_knowledge_content,
+    upsert_seed_documents,
+)
 from apps.after_sales.models import KnowledgeChunk
+from apps.after_sales.vector_store import MilvusUnavailable
 
 
 class AfterSalesKnowledgeTests(TestCase):
@@ -22,12 +28,25 @@ class AfterSalesKnowledgeTests(TestCase):
     @patch("apps.after_sales.knowledge.embed_texts", return_value=[[0.1] * 1536])
     def test_indexing_reuses_current_embeddings_when_content_is_unchanged(self, mock_embed):
         document = upsert_seed_documents()[0][0]
-        from apps.after_sales.knowledge import index_document
-
         self.assertEqual(index_document(document), 1)
         self.assertEqual(KnowledgeChunk.objects.count(), 1)
         self.assertEqual(index_document(document), 0)
         self.assertEqual(mock_embed.call_count, 1)
+
+    @override_settings(AFTER_SALES_VECTOR_BACKEND="milvus", AFTER_SALES_ALLOW_POSTGRES_FALLBACK=True)
+    @patch("apps.after_sales.knowledge.upsert_document_vectors", side_effect=MilvusUnavailable("连接失败"))
+    @patch("apps.after_sales.knowledge.embed_texts", return_value=[[0.1] * 1536])
+    def test_milvus_failure_is_visible_as_degraded_postgres_index(self, mock_embed, mock_upsert):
+        document = upsert_seed_documents()[0][0]
+
+        self.assertEqual(index_document(document), 1)
+
+        document.refresh_from_db()
+        self.assertEqual(document.index_status, document.IndexStatus.DEGRADED)
+        self.assertEqual(document.chunk_count, document.chunks.count())
+        self.assertIn("PostgreSQL", document.index_error)
+        mock_embed.assert_called_once()
+        mock_upsert.assert_called_once()
 
     def test_search_result_contract_can_require_human_escalation(self):
         result = KnowledgeSearchResult(

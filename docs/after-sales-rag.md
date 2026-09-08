@@ -30,6 +30,14 @@ docker compose exec backend python manage.py seed_after_sales_knowledge
 docker compose exec backend python manage.py seed_after_sales_knowledge --force
 ```
 
+如果页面显示的切片数量、索引状态与实际检索结果不一致，或更换过 Milvus 数据卷，运行一致性修复命令：
+
+```powershell
+docker compose exec backend python manage.py repair_after_sales_knowledge
+```
+
+该命令默认复用 PostgreSQL 中已有的 Embedding，校验并重建每篇文档在 Milvus 中的向量，同时清理已不存在于 PostgreSQL 的孤儿向量。只有需要更换 Embedding 模型或重新计算全部向量时才使用 `--force`。Milvus 不可用但允许降级时，文档会显示“已降级（PostgreSQL）”，不会再伪装成“已就绪”。
+
 管理员登录网站后打开 `/staff/knowledge-base`，即可上传文档、读取网页、输入文本、搜索文档、启停检索、重建索引和删除来源。上传请求会先解析并保存来源，随后由 Celery 异步分块、Embedding 并写入 Milvus；页面上的“已就绪”表示可以被 Agent 检索。页面中的“检索测试”可以直接输入问题，查看命中的切片、相似度、文档名称和引用来源，并验证商品/分类专属规则。
 
 也可以在 Django Admin 的“售后知识文档”中查看文档和切片。每篇文档可选全局规则、指定商品分类或指定商品；检索时 Agent 可以传入商品/分类范围，优先匹配专属规则，同时保留全局规则。

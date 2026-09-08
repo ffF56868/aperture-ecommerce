@@ -106,6 +106,52 @@ def delete_document_vectors(document_id: str) -> None:
         raise MilvusUnavailable("Milvus 删除旧向量失败。") from exc
 
 
+def _document_vector_rows(collection, document_id: str, *, limit: int = 16384) -> list[dict[str, Any]]:
+    """Read the small, auditable metadata set for one document."""
+
+    try:
+        return collection.query(
+            expr=f'document_id == "{_escape(str(document_id))}"',
+            output_fields=["id", "chunk_id", "scope_key"],
+            limit=limit,
+        )
+    except Exception as exc:
+        raise MilvusUnavailable("Milvus 索引状态校验失败。") from exc
+
+
+def document_vector_count(document_id: str) -> int:
+    """Return the visible Milvus row count for one document."""
+
+    collection = _collection()
+    return len(_document_vector_rows(collection, document_id))
+
+
+def delete_orphaned_document_vectors(valid_document_ids: set[str]) -> int:
+    """Remove vectors whose PostgreSQL source document no longer exists."""
+
+    collection = _collection()
+    try:
+        rows = collection.query(
+            expr='id != ""',
+            output_fields=["document_id"],
+            limit=16384,
+        )
+        orphaned_ids = {
+            str(row["document_id"])
+            for row in rows
+            if str(row.get("document_id", "")) not in valid_document_ids
+        }
+        removed = 0
+        for document_id in orphaned_ids:
+            collection.delete(expr=f'document_id == "{_escape(document_id)}"')
+            removed += 1
+        if orphaned_ids:
+            collection.flush()
+        return removed
+    except Exception as exc:
+        raise MilvusUnavailable("Milvus 孤儿向量清理失败。") from exc
+
+
 def upsert_document_vectors(document, chunks, embeddings: list[list[float]]) -> int:
     """Replace every vector belonging to one document; return inserted row count."""
 
@@ -139,7 +185,18 @@ def upsert_document_vectors(document, chunks, embeddings: list[list[float]]) -> 
                 ]
             )
         collection.flush()
+        expected_ids = {row[0] for row in rows}
+        actual_ids = {
+            str(row["id"])
+            for row in _document_vector_rows(collection, str(document.id), limit=max(1, len(expected_ids)))
+        }
+        if actual_ids != expected_ids:
+            raise MilvusUnavailable(
+                f"Milvus 索引校验失败：期望 {len(expected_ids)} 条，实际 {len(actual_ids)} 条。"
+            )
         return len(rows)
+    except MilvusUnavailable:
+        raise
     except Exception as exc:
         raise MilvusUnavailable("Milvus 写入向量失败。") from exc
 

@@ -745,6 +745,7 @@ class StaffKnowledgeDocumentListView(APIView):
                 "summary": {
                     "total": queryset.count(),
                     "ready": queryset.filter(index_status=KnowledgeDocument.IndexStatus.READY).count(),
+                    "degraded": queryset.filter(index_status=KnowledgeDocument.IndexStatus.DEGRADED).count(),
                     "pending": queryset.filter(index_status=KnowledgeDocument.IndexStatus.PENDING).count(),
                     "processing": queryset.filter(index_status=KnowledgeDocument.IndexStatus.PROCESSING).count(),
                     "failed": queryset.filter(index_status=KnowledgeDocument.IndexStatus.FAILED).count(),
