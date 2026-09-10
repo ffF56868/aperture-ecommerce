@@ -43,22 +43,11 @@ class RegisterSerializer(serializers.Serializer):
 
         user, _ = User.objects.update_or_create(
             phone_number=phone_number,
-            defaults={"username": username, "is_phone_verified": False},
+            defaults={"username": username, "is_phone_verified": True},
         )
         user.set_password(password)
         user.save(update_fields=["password", "username", "is_phone_verified"])
 
-        code = generate_otp_code()
-        store_otp(str(phone_number), code)
-        OTPVerification.objects.create(
-            user=user,
-            phone_number=phone_number,
-            purpose=OTPVerification.Purpose.REGISTRATION,
-        )
-
-        from .tasks import send_otp_sms
-
-        send_otp_sms.delay(str(phone_number), code)
         return user
 
 
@@ -125,8 +114,6 @@ class LoginSerializer(serializers.Serializer):
         user = User.objects.filter(username=attrs["username"]).first()
         if user is None or not user.check_password(attrs["password"]):
             raise serializers.ValidationError("用户名或密码不正确。")
-        if not user.is_phone_verified:
-            raise serializers.ValidationError("请先完成手机号验证后再登录。")
         if not user.is_active:
             raise serializers.ValidationError("该账户已被停用。")
 

@@ -22,9 +22,9 @@ User = get_user_model()
 
 
 @extend_schema(
-    summary="Register (step 1) — submit username/phone/password, receive an OTP by SMS",
+    summary="Register — submit username/phone/password to create an account",
     tags=["Authentication"],
-    responses={201: OpenApiResponse(description="OTP sent")},
+    responses={201: OpenApiResponse(description="Account created")},
 )
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
@@ -38,7 +38,7 @@ class RegisterView(generics.CreateAPIView):
         serializer.save()
         return Response(
             {
-                "detail": "验证码已发送至你的手机。",
+                "detail": "注册成功。",
                 "phone_number": serializer.validated_data["phone_number"],
             },
             status=status.HTTP_201_CREATED,
