@@ -76,3 +76,44 @@ def send_after_sales_notification_email(self, notification_id: str):
         notification.save(update_fields=["email_status", "email_error", "updated_at"])
         logger.exception("Failed to send mock after-sales email %s", notification_id)
         raise self.retry(exc=exc) from exc
+
+
+@shared_task(bind=True, max_retries=2, default_retry_delay=30)
+def extract_conversation_memories(self, conversation_id: str):
+    """Extract user preferences and conversation summary using LLM.
+
+    This task runs asynchronously after a conversation turn completes.
+    It analyzes the conversation history and extracts:
+    - User preferences (LONG_TERM memory)
+    - Conversation summary (EPISODIC memory, 60-day TTL)
+
+    Args:
+        conversation_id: UUID of the conversation to analyze
+    """
+    from .memory import MemoryError, extract_memories_from_conversation
+
+    try:
+        result = extract_memories_from_conversation(conversation_id)
+        logger.info(
+            "Memory extraction completed for conversation %s: %s",
+            conversation_id,
+            result,
+        )
+        return result
+    except MemoryError as exc:
+        logger.warning(
+            "Memory extraction failed for conversation %s: %s",
+            conversation_id,
+            exc,
+        )
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc) from exc
+        return {"error": str(exc)}
+    except Exception as exc:
+        logger.exception(
+            "Unexpected error during memory extraction for conversation %s",
+            conversation_id,
+        )
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc) from exc
+        return {"error": str(exc)}

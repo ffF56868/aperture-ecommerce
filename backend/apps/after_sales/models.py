@@ -319,6 +319,11 @@ class CustomerMemory(TimeStampedMixin):
         CASE_SUMMARY = "CASE_SUMMARY", "售后摘要"
         CONVERSATION_SUMMARY = "CONVERSATION_SUMMARY", "会话摘要"
 
+    class MemoryLayer(models.TextChoices):
+        WORKING = "WORKING", "工作记忆"
+        EPISODIC = "EPISODIC", "情景记忆"
+        LONG_TERM = "LONG_TERM", "长期记忆"
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         verbose_name="用户",
@@ -334,9 +339,25 @@ class CustomerMemory(TimeStampedMixin):
         related_name="memories",
     )
     memory_type = models.CharField("记忆类型", max_length=32, choices=MemoryType.choices)
+    memory_layer = models.CharField(
+        "记忆层级", max_length=16, choices=MemoryLayer.choices, default=MemoryLayer.EPISODIC
+    )
     key = models.CharField("记忆键", max_length=100)
     value = models.JSONField("记忆内容", default=dict)
     is_active = models.BooleanField("启用", default=True)
+    embedding = VectorField("向量", dimensions=1536, null=True, blank=True)
+    expires_at = models.DateTimeField("过期时间", null=True, blank=True)
+    access_count = models.PositiveIntegerField("访问次数", default=0)
+    last_accessed_at = models.DateTimeField("最后访问时间", null=True, blank=True)
+    version = models.PositiveSmallIntegerField("版本号", default=1)
+    supersedes = models.ForeignKey(
+        "self",
+        verbose_name="替代记忆",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="superseded_by",
+    )
 
     class Meta:
         verbose_name = "用户记忆"
@@ -347,7 +368,17 @@ class CustomerMemory(TimeStampedMixin):
                 fields=["user", "memory_type", "key"], name="after_sales_unique_customer_memory"
             )
         ]
-        indexes = [models.Index(fields=["user", "memory_type", "is_active"])]
+        indexes = [
+            models.Index(fields=["user", "memory_type", "is_active"]),
+            models.Index(fields=["user", "memory_layer", "is_active", "expires_at"]),
+            HnswIndex(
+                name="customer_memory_emb_hnsw",
+                fields=["embedding"],
+                m=16,
+                ef_construction=64,
+                opclasses=["vector_cosine_ops"],
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.user} - {self.get_memory_type_display()}：{self.key}"
