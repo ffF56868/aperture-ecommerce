@@ -136,3 +136,4 @@ jobs:
           context: ./frontend
           push: false
           tags: ecommerce-frontend:ci
+
